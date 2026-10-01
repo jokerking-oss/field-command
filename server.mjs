@@ -341,10 +341,14 @@ export async function createServer({
           } catch {
             fail(403, "请求来源无效");
           }
-          if (
-            origin.host !== req.headers.host ||
-            !["http:", "https:"].includes(origin.protocol)
-          )
+          // 反向代理场景下，公开域名在 x-forwarded-host 里，与直连 Host 都接受
+          const forwardedHost = String(req.headers["x-forwarded-host"] ?? "")
+            .split(",")[0]
+            .trim();
+          const hostOk =
+            origin.host === req.headers.host ||
+            (forwardedHost !== "" && origin.host === forwardedHost);
+          if (!hostOk || !["http:", "https:"].includes(origin.protocol))
             fail(403, "请从本游戏页面发起请求");
         }
         if (url.pathname === "/api/rooms") {
