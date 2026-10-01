@@ -341,14 +341,27 @@ export async function createServer({
           } catch {
             fail(403, "请求来源无效");
           }
-          // 反向代理场景下，公开域名在 x-forwarded-host 里，与直连 Host 都接受
-          const forwardedHost = String(req.headers["x-forwarded-host"] ?? "")
-            .split(",")[0]
-            .trim();
-          const hostOk =
-            origin.host === req.headers.host ||
-            (forwardedHost !== "" && origin.host === forwardedHost);
-          if (!hostOk || !["http:", "https:"].includes(origin.protocol))
+          // 反向代理/沙箱会改写 Host 与 x-forwarded-host；
+          // 部署时用 PUBLIC_ORIGIN 声明公开域名，本地直连不受影响
+          const hostCandidates = new Set();
+          const addHost = (v) => {
+            if (!v) return;
+            for (const part of String(v).split(",")) {
+              const h = part.trim().toLowerCase();
+              if (h) hostCandidates.add(h);
+            }
+          };
+          addHost(req.headers.host);
+          addHost(req.headers["x-forwarded-host"]);
+          if (process.env.PUBLIC_ORIGIN) {
+            try {
+              addHost(new URL(process.env.PUBLIC_ORIGIN).host);
+            } catch {}
+          }
+          if (
+            !hostCandidates.has(origin.host.toLowerCase()) ||
+            !["http:", "https:"].includes(origin.protocol)
+          )
             fail(403, "请从本游戏页面发起请求");
         }
         if (url.pathname === "/api/rooms") {
