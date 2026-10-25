@@ -54,25 +54,21 @@
             抢占城市，调动部队，把握反击时机。<br />从第一名步兵开始，打出你的战术。
           </p>
           <div class="landing-actions">
-            <button id="quick-start" class="button primary large">
+            <button id="create-room" class="button primary large">
               <span class="button-icon">⚑</span
-              ><span>开始单人演习<small>与电脑对战 · 即刻出发</small></span
+              ><span>建立作战<small>选地图 · 选指挥官 · 即刻出发</small></span
               ><b>→</b>
             </button>
-            <div class="action-pair">
-              <button id="create-room" class="button secondary">
-                ＋ 创建联机房间</button
-              ><button id="join-room" class="button secondary">
-                ↗ 加入房间
-              </button>
-            </div>
+            <button id="join-room" class="button secondary">
+              ↗ 加入房间
+            </button>
             <button id="resume-game" class="resume-button hidden">
               ↻ 继续上次作战 <span>→</span>
             </button>
           </div>
           <div class="feature-stats">
-            <div><strong>08</strong><span>陆战兵种</span></div>
-            <div><strong>03</strong><span>战术地图</span></div>
+            <div><strong>25</strong><span>陆海空兵种</span></div>
+            <div><strong>47</strong><span>战术地图</span></div>
             <div><strong>2–4</strong><span>局域网玩家</span></div>
           </div>
           <div class="landing-note">
@@ -340,9 +336,17 @@ const log = (s) => { document.title = s; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const count = () => document.querySelectorAll(".command-list button").length;
 try {
-  const solo = document.getElementById("quick-start");
-  if (!solo) { log("ERR no-quick-start"); throw new Error("no quick-start"); }
-  solo.click();
+  // quick-start 已下线：走「建立作战」对话框，显式选回 training 图复现原场景
+  const create = document.getElementById("create-room");
+  if (!create) { log("ERR no-create-room"); throw new Error("no create-room"); }
+  create.click();
+  await sleep(500);
+  const mapSel = document.getElementById("create-map");
+  if (mapSel && [...mapSel.options].some((o) => o.value === "training")) mapSel.value = "training";
+  document.querySelector("#create-form button[type=submit]").click();
+  await sleep(1500);
+  const startBtn = document.getElementById("start-game");
+  if (startBtn && !startBtn.disabled) startBtn.click();
   await sleep(4500);
   const c = document.getElementById("battle-canvas");
   if (!c) { log("ERR no-canvas"); throw new Error("no canvas"); }

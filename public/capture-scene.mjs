@@ -4,7 +4,7 @@ import { captureDuration } from "./shared/animation-timing.mjs";
 export { captureDuration };
 
 const ARMIES = ["赤焰军", "苍蓝军", "金叶军", "紫星军"];
-const PROPERTY_NAMES = { city: "城市", factory: "工厂", hq: "总部" };
+const PROPERTY_NAMES = { city: "城市", factory: "工厂", hq: "总部", port: "港口", airport: "机场" };
 const spriteCache = new Map();
 const clamp = (value) => Math.max(0, Math.min(1, value));
 
@@ -54,10 +54,42 @@ function backdrop(ctx, type) {
     box(ctx, 0, 342, 800, 33, "#829887");
     for (let x = 0; x < 800; x += 66) box(ctx, x, 337, 49, 8, "#788e7c");
   }
-  box(ctx, 0, 384, 800, 66, "#b9b69a");
+  box(ctx, 0, 384, 800, 66, type === "port" ? "#6e9a9a" : "#b9b69a");
   box(ctx, 0, 390, 800, 6, "#d2cfad");
   for (let x = 24; x < 800; x += 116) box(ctx, x, 428, 48, 4, "#e8dfb7");
   box(ctx, 0, 375, 800, 10, "#7b9b7a");
+}
+
+function portStructure(ctx, p) {
+  box(ctx, 295, 128, 470, 260, "#49665f");
+  box(ctx, 303, 136, 454, 247, "#abbba7");
+  box(ctx, 293, 126, 474, 21, p[2]);
+  box(ctx, 303, 127, 452, 5, p[0]);
+  for (const x of [320, 407, 659]) {
+    box(ctx, x, 178, 66, 98, "#688d89");
+    box(ctx, x + 8, 187, 49, 65, "#cad6bd");
+  }
+  box(ctx, 331, 77, 7, 53, "#435f5a");
+  box(ctx, 335, 79, 214, 9, p[1]);
+  box(ctx, 540, 83, 7, 83, "#435f5a");
+  box(ctx, 521, 158, 43, 12, "#ecd9ac");
+  box(ctx, 293, 371, 474, 19, "#c3ad88");
+}
+
+function airportStructure(ctx, p) {
+  box(ctx, 291, 138, 478, 249, "#465e5b");
+  box(ctx, 300, 146, 460, 238, "#b9c4ad");
+  box(ctx, 290, 130, 480, 20, p[2]);
+  box(ctx, 304, 133, 450, 5, p[0]);
+  for (const x of [309, 388, 670]) {
+    box(ctx, x, 175, 63, 103, "#627f77");
+    box(ctx, x + 7, 185, 48, 77, "#97b7ab");
+    box(ctx, x + 15, 193, 31, 23, "#3f6469");
+  }
+  box(ctx, 711, 63, 13, 70, "#516968");
+  box(ctx, 705, 57, 25, 12, "#e5e0bd");
+  box(ctx, 289, 375, 481, 15, "#717d76");
+  for (let x = 306; x < 762; x += 72) box(ctx, x, 381, 29, 4, "#e4d9b4");
 }
 
 function doorAmount(elapsed, exitStart) {
@@ -155,6 +187,8 @@ function building(ctx, capture, elapsed, state) {
   const p = palette(state.owner), type = capture.tile.type;
   if (type === "factory") factoryStructure(ctx, p);
   else if (type === "hq") headquartersStructure(ctx, p);
+  else if (type === "port") portStructure(ctx, p);
+  else if (type === "airport") airportStructure(ctx, p);
   else cityStructure(ctx, p);
   box(ctx, 487, 226, 126, 164, "#587067");
   box(ctx, 495, 234, 110, 156, "#d5d4ae");
@@ -181,6 +215,10 @@ function flag(ctx, capture, elapsed, state) {
     ? { x: 350, top: 83, bottom: 151 }
     : capture.tile.type === "hq"
       ? { x: 447, top: 22, bottom: 83 }
+      : capture.tile.type === "port"
+        ? { x: 372, top: 62, bottom: 128 }
+        : capture.tile.type === "airport"
+          ? { x: 405, top: 68, bottom: 133 }
       : { x: 391, top: 58, bottom: 118 };
   box(ctx, x, top, 5, bottom - top, "#374f49");
   box(ctx, x + 5, top, 3, bottom - top, "#e5d3a9");

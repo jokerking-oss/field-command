@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#141e22" />
     <meta
       name="description"
-      content="前线指令：原创像素回合制战棋。单人演习，或与朋友在局域网展开2–4人对战。"
+      content="前线指令：原创像素回合制战棋。建立战局，2–4 人对战，空位由电脑接管。"
     />
     <title>前线指令 · FIELD COMMAND</title>
     <link
@@ -21,6 +21,8 @@
     <!-- ★ 真实战争界面层（金属材质 + 冷灰调 + 3D）：必须在 aw-hud.css 之后。
          它覆盖上面三层的配色与材质。删掉这一行即完全回退到 AW 像素界面。 -->
     <link rel="stylesheet" href="/hw-ui.css" />
+    <!-- 个人档案与战绩面板：样式全部限定在 .profile-* 内，删掉这一行即回退。 -->
+    <link rel="stylesheet" href="/profile.css" />
   </head>
   <body>
     <div id="app">
@@ -36,6 +38,12 @@
         <div class="top-actions">
           <span class="network-status" id="network-status"><i></i>连接中</span
           ><button
+            class="avatar-button"
+            id="profile-button"
+            title="我的档案与战绩"
+            aria-label="我的档案与战绩"
+          ></button
+          ><button
             class="icon-button"
             id="sound-button"
             title="开启音效"
@@ -50,33 +58,29 @@
       <main id="landing" class="screen landing">
         <section class="landing-copy">
           <div class="eyebrow">
-            <span class="small-cross">✦</span> TURN-BASED TACTICS · 局域网战棋
+            <span class="small-cross">✦</span> TURN-BASED TACTICS · 联机战棋
           </div>
           <h1>小小战场。<br /><span>步步为营。</span></h1>
           <p class="intro">
             抢占城市，调动部队，把握反击时机。<br />从第一名步兵开始，打出你的战术。
           </p>
           <div class="landing-actions">
-            <button id="quick-start" class="button primary large">
+            <button id="create-room" class="button primary large">
               <span class="button-icon">⚑</span
-              ><span>开始单人演习<small>与电脑对战 · 即刻出发</small></span
+              ><span>建立作战<small>选地图 · 选指挥官 · 即刻出发</small></span
               ><b>→</b>
             </button>
-            <div class="action-pair">
-              <button id="create-room" class="button secondary">
-                ＋ 创建联机房间</button
-              ><button id="join-room" class="button secondary">
-                ↗ 加入房间
-              </button>
-            </div>
+            <button id="join-room" class="button secondary">
+              ↗ 加入房间
+            </button>
             <button id="resume-game" class="resume-button hidden">
               ↻ 继续上次作战 <span>→</span>
             </button>
           </div>
           <div class="feature-stats">
-            <div><strong>08</strong><span>陆战兵种</span></div>
-            <div><strong>03</strong><span>战术地图</span></div>
-            <div><strong>2–4</strong><span>局域网玩家</span></div>
+            <div><strong>25</strong><span>陆海空兵种</span></div>
+            <div><strong>47</strong><span>战术地图</span></div>
+            <div><strong>2–4</strong><span>联机玩家</span></div>
           </div>
           <div class="landing-note">
             <span class="tiny-dot"></span> 同一网络，一起开战。支持混战、组队与
@@ -149,7 +153,7 @@
           <div>
             <div class="eyebrow">MISSION BRIEFING / 战前部署</div>
             <h1>集结你的部队<span>.</span></h1>
-            <p>邀请同一局域网中的朋友，或让电脑加入战场。</p>
+            <p>邀请朋友加入战局，或让电脑接管空位。</p>
           </div>
           <button id="lobby-back" class="button subtle">← 返回大厅</button>
         </div>
@@ -186,7 +190,7 @@
                   <input
                     id="invite-url"
                     readonly
-                    aria-label="局域网邀请地址"
+                    aria-label="邀请地址"
                   /><button id="copy-invite" class="button small">复制</button>
                 </div>
                 <p>分享此地址，或让朋友输入上方房间码。房主服务需保持运行。</p>

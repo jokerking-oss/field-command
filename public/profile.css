@@ -1,0 +1,175 @@
+/* 个人档案与战绩面板。所有选择器都限定在 .avatar-button / .profile-* 内，
+   删掉 index.html 里那行 link 即可完全回退，不影响其他界面层。 */
+
+.avatar-button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(232, 180, 74, 0.55);
+  background: #2b323c;
+  cursor: pointer;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.avatar-button:hover {
+  border-color: #e8b44a;
+  transform: translateY(-1px);
+}
+
+.avatar-button svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 4px 0 14px;
+}
+
+.profile-head .profile-avatar-large {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(232, 180, 74, 0.5);
+  flex: 0 0 auto;
+}
+
+.profile-head .profile-avatar-large svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.profile-head h4 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.profile-head p {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.75;
+  word-break: break-all;
+}
+
+.profile-avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  margin: 6px 0 16px;
+}
+
+.profile-avatar-grid button {
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: #222831;
+  cursor: pointer;
+  overflow: hidden;
+  aspect-ratio: 1;
+}
+
+.profile-avatar-grid button svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.profile-avatar-grid button[aria-pressed="true"] {
+  border-color: #e8b44a;
+  box-shadow: 0 0 0 2px rgba(232, 180, 74, 0.35);
+}
+
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+
+.profile-stats div {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: center;
+}
+
+.profile-stats strong {
+  display: block;
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.profile-stats span {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.profile-records {
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.profile-records table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.profile-records th,
+.profile-records td {
+  padding: 6px 9px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  white-space: nowrap;
+}
+
+.profile-records th {
+  font-weight: 500;
+  opacity: 0.6;
+  position: sticky;
+  top: 0;
+  background: #232a33;
+}
+
+.profile-records tr:last-child td {
+  border-bottom: none;
+}
+
+.profile-records .win {
+  color: #e8b44a;
+}
+
+.profile-records .lose {
+  opacity: 0.6;
+}
+
+.profile-empty {
+  padding: 18px 12px;
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.65;
+}
+
+.profile-id {
+  font-size: 11px;
+  opacity: 0.55;
+  margin-top: 10px;
+  word-break: break-all;
+}

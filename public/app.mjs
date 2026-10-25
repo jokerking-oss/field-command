@@ -8,7 +8,14 @@ import {
   attackable,
   previewCombat,
 } from "./shared/engine.mjs";
-import { createRenderer, TEAM_COLORS } from "./renderer.mjs";
+import { createRenderer, TEAM_COLORS, TEAM_PALETTES } from "./renderer.mjs";
+import { unitPortraitDataUrl } from "./unit-portrait.mjs";
+import {
+  mapsForPlayerCount,
+  unitsForFacility,
+  specialCommands,
+  moveCommandAction,
+} from "./shared/ui-options.mjs";
 import { paintCombatScene, COMBAT_TIMING, combatDuration } from "./combat-scene.mjs";
 import { commandMenuPosition } from "./shared/hud-layout.mjs";
 import {
@@ -18,6 +25,16 @@ import {
   heroFrameAt,
   heroStateAt,
 } from "./hero-cinematic.mjs";
+import {
+  AVATAR_COUNT,
+  avatarSvg,
+  clearRecords,
+  loadProfile,
+  loadRecords,
+  recordMatch,
+  saveProfile,
+  statsFor,
+} from "./profile.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const esc = (value) =>
@@ -30,6 +47,12 @@ const esc = (value) =>
   );
 const number = (value) => Number(value || 0).toLocaleString("zh-CN");
 const names = ["赤焰军", "苍蓝军", "金叶军", "紫星军"];
+const featureStats = document.querySelectorAll(".feature-stats > div");
+if (featureStats.length >= 2) {
+  featureStats[0].querySelector("strong").textContent = String(Object.keys(UNITS).length).padStart(2, "0");
+  featureStats[0].querySelector("span").textContent = "陆海空兵种";
+  featureStats[1].querySelector("strong").textContent = String(MAPS.length).padStart(2, "0");
+}
 let room = null,
   session = null,
   eventSource = null,
@@ -43,11 +66,28 @@ let selectedId = null,
   holdPreviewId = null,
   dragUnitId = null,
   dragArrowPath = null;
+/* ---------- 公网 / 内网判定（2026-10-02） ----------
+   公网部署后 location.hostname 是公网域名，此时邀请链接必须用 location.origin；
+   只有在本机 / 内网打开时，才回退到服务探测到的局域网 IP。 */
+function isLanHost(hostname) {
+  const host = String(hostname || "")
+    .replace(/^\[|\]$/g, "")
+    .toLowerCase();
+  if (!host) return false;
+  if (host === "localhost" || host === "::1" || /^127\./.test(host)) return true;
+  if (/^10\./.test(host)) return true;
+  if (/^192\.168\./.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
+  if (host.endsWith(".local") || host.endsWith(".localhost")) return true;
+  return false;
+}
 let serviceURLs = [],
+  publicMode = false,
   previousTurn = null,
   victoryShown = null,
   soundEnabled = false,
   audioContext;
+let lobbyMapQuery = "";
 let storedSessions = loadJSON("field-command-sessions", {});
 const modal = $("#modal");
 let modalCleanup = null;
@@ -66,7 +106,7 @@ function store(key, value) {
   }
 }
 function nickname() {
-  return loadJSON("field-command-name", "指挥官");
+  return loadJSON("field-command-name", "") || loadProfile().callsign || "指挥官";
 }
 function toast(message, error = false) {
   const el = document.createElement("div");
@@ -150,6 +190,118 @@ modal.addEventListener("close", () => {
   if (modalCleanup) modalCleanup();
   modalCleanup = null;
 });
+
+/* ---------- 个人档案与战绩（全部存本机，服务端不参与） ---------- */
+
+function paintAvatarButton() {
+  const button = $("#profile-button");
+  if (!button) return;
+  const profile = loadProfile();
+  button.innerHTML = avatarSvg(profile.avatar, 3, { className: "avatar-glyph" });
+  button.title = `${profile.callsign || nickname()} · 我的档案与战绩`;
+}
+
+function recordOf(room_, state) {
+  const me = state.players.find((player) => player.id === session.seat);
+  if (!me || state.winner === null || state.winner === undefined) return null;
+  const opponents = state.players
+    .filter((player) => player.team !== me.team)
+    .map((player) => player.name)
+    .join("、");
+  return {
+    key: `${room_.id}:${state.turn}`,
+    callsign: nickname(),
+    seat: session.seat,
+    won: me.team === state.winner,
+    mapId: room_.mapId,
+    mapName: getMap(room_.mapId).name,
+    mode: room_.mode,
+    playerCount: room_.playerCount,
+    day: state.day,
+    opponents: opponents || "—",
+  };
+}
+
+function formatRecordTime(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getMonth() + 1}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function profileDialog() {
+  const render = () => {
+    const profile = loadProfile();
+    const records = loadRecords();
+    const stats = statsFor(records);
+    const rows = records.slice(0, 12);
+    openModal(
+      "我的档案",
+      `<div class="profile-head"><div class="profile-avatar-large" id="profile-avatar-preview"></div><div><h4 id="profile-callsign">${esc(profile.callsign || nickname())}</h4><p>本机档案 · 不联网、不上传</p></div></div>
+      <label class="form-field" style="display:block;margin-bottom:14px"><span style="font-size:12px;opacity:.75">呼号</span><input id="profile-name-input" maxlength="18" value="${esc(profile.callsign || nickname())}" autocomplete="nickname"></label>
+      <div class="profile-avatar-grid" id="profile-avatar-grid"></div>
+      <div class="profile-stats"><div><strong>${stats.total}</strong><span>总局数</span></div><div><strong>${stats.wins}</strong><span>胜</span></div><div><strong>${stats.loses}</strong><span>负</span></div><div><strong>${stats.winRate}%</strong><span>胜率</span></div></div>
+      <p class="muted" style="font-size:12px;margin:0 0 8px">常用战场：${esc(stats.favoriteMap)}${stats.streak > 1 ? ` · 当前连胜 ${stats.streak}` : ""}${stats.bestDay ? ` · 最长作战 ${stats.bestDay} 天` : ""}</p>
+      <div class="profile-records">${
+        rows.length
+          ? `<table><thead><tr><th>时间</th><th>战场</th><th>对手</th><th>结果</th></tr></thead><tbody>${rows
+              .map(
+                (r) =>
+                  `<tr><td>${formatRecordTime(r.at)}</td><td>${esc(r.mapName || r.mapId || "—")}</td><td>${esc(r.opponents || "—")}</td><td class="${r.won ? "win" : "lose"}">${r.won ? "胜利" : "失败"}</td></tr>`,
+              )
+              .join("")}</tbody></table>`
+          : `<p class="profile-empty">还没有战绩。开一局，打完就会自动记在这里。</p>`
+      }</div>
+      <p class="profile-id">档案编号 ${esc(profile.id)}（存在本机浏览器，清除浏览器数据会丢失）</p>
+      <div class="modal-buttons"><button class="button secondary" id="profile-clear">清空战绩</button><button class="button primary" id="profile-save">保存档案 →</button></div>`,
+      "PLAYER RECORD / 个人档案",
+    );
+    $("#profile-avatar-preview").innerHTML = avatarSvg(profile.avatar, 7);
+    $("#profile-avatar-grid").innerHTML = Array.from(
+      { length: AVATAR_COUNT },
+      (_, index) =>
+        `<button type="button" data-avatar="${index}" aria-pressed="${index === profile.avatar}">${avatarSvg(index, 4)}</button>`,
+    ).join("");
+    const grid = $("#profile-avatar-grid");
+    grid.onclick = (event) => {
+      const button = event.target.closest("button[data-avatar]");
+      if (!button) return;
+      const index = Number(button.dataset.avatar);
+      saveProfile({ avatar: index });
+      for (const other of grid.querySelectorAll("button[data-avatar]"))
+        other.setAttribute("aria-pressed", String(Number(other.dataset.avatar) === index));
+      $("#profile-avatar-preview").innerHTML = avatarSvg(index, 7);
+      paintAvatarButton();
+      beep();
+    };
+    $("#profile-save").onclick = () => {
+      const callsign = $("#profile-name-input").value.trim().slice(0, 18) || "指挥官";
+      saveProfile({ callsign });
+      store("field-command-name", callsign);
+      paintAvatarButton();
+      closeModal();
+      toast(`档案已保存：${callsign}`);
+    };
+    $("#profile-clear").onclick = () => {
+      openModal(
+        "清空战绩？",
+        `<p class="modal-description">将删除本机记录的全部 ${records.length} 条战绩，此操作无法撤销。</p><div class="modal-buttons"><button class="button secondary" id="cancel-clear">保留</button><button class="button primary" id="confirm-clear">确认清空</button></div>`,
+        "CLEAR RECORDS",
+      );
+      $("#cancel-clear").onclick = closeModal;
+      $("#confirm-clear").onclick = () => {
+        clearRecords();
+        toast("战绩已清空。");
+        render();
+      };
+    };
+  };
+  render();
+}
+
+$("#profile-button").onclick = profileDialog;
+paintAvatarButton();
+
 async function api(path, data) {
   const response = await fetch(
     path,
@@ -185,11 +337,20 @@ function commanderOptions(selected = "vanguard") {
     )
     .join("");
 }
-function mapOptions(selected = "river") {
-  return MAPS.map(
-    (m) =>
-      `<option value="${esc(m.id)}" ${m.id === selected ? "selected" : ""}>${esc(m.name)}</option>`,
-  ).join("");
+function mapCategory(map) {
+  return map.category || "经典战场";
+}
+function mapOptions(selected = "river", playerCount = 2, query = "") {
+  const groups = new Map();
+  for (const map of mapsForPlayerCount(MAPS, playerCount, query)) {
+    const category = mapCategory(map);
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category).push(map);
+  }
+  if (!groups.size) return '<option value="">没有符合条件的战场</option>';
+  return [...groups].map(([category, maps]) =>
+    `<optgroup label="${esc(category)}">${maps.map((map) =>
+      `<option value="${esc(map.id)}" ${map.id === selected ? "selected" : ""}>${esc(map.name)} · ${map.width}×${map.height}</option>`).join("")}</optgroup>`).join("");
 }
 function getMap(id) {
   return MAPS.find((map) => map.id === id) || MAPS[0];
@@ -288,7 +449,7 @@ const heroRenderer = createRenderer($("#hero-canvas"), {
       ? `${UNITS[unit.type].name} · ${names[unit.owner]}`
       : TERRAINS[tile.type]?.name || tile.type;
     $("#hero-detail-text").textContent = unit
-      ? `兵力 ${unit.hp}/10 · 移动 ${UNITS[unit.type].move} 格 · 射程 ${UNITS[unit.type].minRange}–${UNITS[unit.type].maxRange} · 点击「单人演习」开始`
+      ? `兵力 ${unit.hp}/10 · 移动 ${UNITS[unit.type].move} 格 · 射程 ${UNITS[unit.type].minRange}–${UNITS[unit.type].maxRange} · 点击「建立作战」开始`
       : `地形防御 ${TERRAINS[tile.type]?.defense || 0} ★ · 善用地形保护部队`;
     beep();
   },
@@ -799,6 +960,36 @@ function receiveRoom(next) {
     `房间 ${room.id} · ${room.mode === "teams" ? "联合行动" : "自由混战"} · 每一步都已同步`;
   if (oldId && oldId !== room.id) closeModal();
 }
+function renderLobbyMapOptions() {
+  const host = $("#map-options");
+  let search = host.querySelector("#lobby-map-search");
+  if (!search) {
+    host.innerHTML = '<label for="lobby-map-search">查找战场</label><input id="lobby-map-search" type="search" placeholder="名称、地形或战术" autocomplete="off"><div class="map-option-list"></div>';
+    search = host.querySelector("#lobby-map-search");
+    search.value = lobbyMapQuery;
+    search.addEventListener("input", () => {
+      lobbyMapQuery = search.value;
+      renderLobbyMapOptions();
+    });
+  }
+  const list = host.querySelector(".map-option-list");
+  const maps = mapsForPlayerCount(MAPS, room.playerCount, lobbyMapQuery);
+  if (!maps.length) {
+    list.innerHTML = '<p class="map-picker-empty">没有符合条件的战场。</p>';
+    return;
+  }
+  const groups = new Map();
+  for (const map of maps) {
+    const category = mapCategory(map);
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category).push(map);
+  }
+  list.innerHTML = [...groups].map(([category, group]) =>
+    `<section class="map-option-group"><h3>${esc(category)}</h3><div class="map-option-grid">${group.map((map) =>
+      `<button class="map-option ${map.id === room.mapId ? "active" : ""}" data-map="${esc(map.id)}" ${session.seat !== room.hostSeat ? "disabled" : ""} aria-pressed="${map.id === room.mapId}"><span>${esc(map.name)}</span><small>${map.width} × ${map.height} · ${map.playerCount || "2–4"} 人</small></button>`).join("")}</div></section>`).join("");
+  list.querySelectorAll("button[data-map]").forEach((button) =>
+    (button.onclick = () => safe(() => roomRequest("configure", { mapId: button.dataset.map }))));
+}
 function renderLobby() {
   $("#room-id").textContent = room.id;
   $("#lobby-count").textContent =
@@ -827,17 +1018,7 @@ function renderLobby() {
   $("#my-commander").innerHTML = commanderOptions(mySeat.commander);
   $("#commander-description").textContent =
     COMMANDERS[mySeat.commander]?.description || "";
-  $("#map-options").innerHTML = MAPS.map(
-    (m) =>
-      `<button class="map-option ${m.id === room.mapId ? "active" : ""}" data-map="${m.id}" ${!isHost ? "disabled" : ""}><span>${esc(m.name)}</span><small>${m.width} × ${m.height}</small></button>`,
-  ).join("");
-  $("#map-options")
-    .querySelectorAll("button")
-    .forEach(
-      (button) =>
-        (button.onclick = () =>
-          safe(() => roomRequest("configure", { mapId: button.dataset.map }))),
-    );
+  renderLobbyMapOptions();
   $("#room-mode").value = room.mode;
   $("#room-mode").disabled = !isHost;
   $("#room-mode").querySelector('[value="teams"]').disabled =
@@ -867,13 +1048,16 @@ async function roomRequest(endpoint, data = {}) {
   return result;
 }
 function inviteURL() {
-  const lan = serviceURLs.find(
-    (url) =>
-      !url.includes("127.0.0.1") &&
-      !url.includes("localhost") &&
-      !url.includes("[::1]"),
-  );
-  return `${lan || location.origin}/?room=${encodeURIComponent(room.id)}`;
+  /* 只有从内网打开时才用探测到的局域网地址；公网访问一律用当前域名。 */
+  const lan = isLanHost(location.hostname)
+    ? serviceURLs.find(
+        (url) =>
+          !url.includes("127.0.0.1") &&
+          !url.includes("localhost") &&
+          !url.includes("[::1]"),
+      ) || location.origin
+    : location.origin;
+  return `${lan}/?room=${encodeURIComponent(room.id)}`;
 }
 async function copyText(text) {
   try {
@@ -882,7 +1066,9 @@ async function copyText(text) {
   } catch {
     openModal(
       "分享房间",
-      `<p class="modal-description">复制下方地址，发送给同一局域网的朋友。</p><input style="width:100%" id="manual-copy" readonly value="${esc(text)}"><p class="muted">房间码：${esc(room?.id || "")}</p>`,
+      `<p class="modal-description">${
+        publicMode ? "复制下方地址，发送给朋友。" : "复制下方地址，发送给同一局域网的朋友。"
+      }</p><input style="width:100%" id="manual-copy" readonly value="${esc(text)}"><p class="muted">房间码：${esc(room?.id || "")}</p>`,
     );
     $("#manual-copy").select();
   }
@@ -946,7 +1132,7 @@ function renderBattle() {
   $("#player-strip").innerHTML = state.players
     .map(
       (player) =>
-        `<div class="player-card ${player.id === state.currentPlayer ? "active" : ""} ${player.defeated ? "defeated" : ""}" style="--player-color:${TEAM_COLORS[player.id]}"><div class="player-name"><i></i>${esc(player.name)}${player.id === session.seat ? " · 你" : ""}</div><small>${player.defeated ? "已退出" : `${state.units.filter((u) => u.owner === player.id).length} 部队 · ${state.tiles.filter((t) => t.owner === player.id && ["city", "factory", "hq"].includes(t.type)).length} 据点`}${room.mode === "teams" ? ` · 队${player.team + 1}` : ""}</small></div>`,
+        `<div class="player-card ${player.id === state.currentPlayer ? "active" : ""} ${player.defeated ? "defeated" : ""}" style="--player-color:${TEAM_COLORS[player.id]}"><div class="player-name"><i></i>${esc(player.name)}${player.id === session.seat ? " · 你" : ""}</div><small>${player.defeated ? "已退出" : `${state.units.filter((u) => u.owner === player.id).length} 部队 · ${state.tiles.filter((t) => t.owner === player.id && ["city", "factory", "hq", "port", "airport"].includes(t.type)).length} 据点`}${room.mode === "teams" ? ` · 队${player.team + 1}` : ""}</small></div>`,
     )
     .join("");
   $("#event-log").innerHTML = (state.log || [])
@@ -982,7 +1168,12 @@ const COMMAND_DESCRIPTIONS = {
   capture: "占领脚下据点。占领值降到 0 后据点归你所有。",
   supply: "为相邻的己方部队补充弹药与燃料。",
   cancel: "取消当前预选，回到未选定状态。",
-  build: "在工厂部署一支新部队，新部队下个回合才能行动。",
+  build: "在己方生产据点部署一支新部队，新部队下个回合才能行动。",
+  submerge: "潜艇下潜，避开普通水面火力。",
+  surface: "潜艇浮出水面。",
+  repair: "维修相邻海军，并补满弹药和燃料。",
+  load: "将相邻友军装入运输单位。",
+  unload: "将载员卸到相邻可通行的空格。",
 };
 
 /** 当前命令菜单该贴在哪个格子（由 renderSelection 各分支设置）。 */
@@ -1096,11 +1287,10 @@ function renderSelection() {
     let commands = "",
       combat = "";
     if (can) {
-      const isInfantry = ["infantry", "mech"].includes(unit.type),
-        tileOwner = state.players.find((p) => p.id === tile.owner);
+      const tileOwner = state.players.find((p) => p.id === tile.owner);
       const canCapture =
-        isInfantry &&
-        ["city", "factory", "hq"].includes(tile.type) &&
+        definition.capture &&
+        ["city", "factory", "hq", "port", "airport"].includes(tile.type) &&
         tile.owner !== unit.owner &&
         (!tileOwner || tileOwner.team !== player.team);
       if (targetId) {
@@ -1126,6 +1316,9 @@ function renderSelection() {
               '<button data-command="capture">⚑ 占领据点</button>';
           if (unit.type === "apc")
             commands += '<button data-command="supply">补给邻近部队</button>';
+          for (const choice of specialCommands(state, unit, pos, UNITS, TERRAINS)) {
+            commands += `<button data-command="${choice.command}" data-desc="${esc(choice.description)}"${choice.targetId ? ` data-target-id="${esc(choice.targetId)}"` : ""}${choice.targetX === undefined ? "" : ` data-target-x="${choice.targetX}" data-target-y="${choice.targetY}"`}>${esc(choice.label)}</button>`;
+          }
         }
       }
       // 没有可下达的指令就连「取消」也不给——整块菜单收起来，
@@ -1133,7 +1326,14 @@ function renderSelection() {
       if (commands)
         commands += `<button data-command="cancel">${destination || targetId ? "取消预选" : "取消选择"}</button>`;
     }
-    panel.innerHTML = `<div class="selection-top"><div><span class="eyebrow">${esc(names[unit.owner])} / UNIT ${esc(unit.id)}</span><h2>${esc(definition.name)}</h2></div><span class="hp-badge">${unit.hp}<small>兵力 / 10</small></span></div><div class="selection-content"><div class="unit-stats"><div><span>移动 / 射程</span><strong>${definition.move} / ${definition.minRange}–${definition.maxRange}</strong></div><div><span>弹药 / 燃料</span><strong>${unit.ammo === null || unit.ammo === undefined ? "∞" : unit.ammo} / ${Math.floor(unit.fuel || 0)}</strong></div><div><span>地形防御</span><strong>${TERRAINS[tile.type]?.defense || 0} ★</strong></div></div>${combat}<p>${can ? (targetId ? "确认后结算伤害与反击。" : destination ? "目的地已预选。再点一次目的地即可移动，或点红色目标攻击。" : "按住部队拖出红色箭头选路线，或点击青色格预选移动。") : unit.acted ? "该部队已行动，下个己方回合恢复。" : unit.owner !== session.seat ? "观察敌我部署，利用射程与地形安排推进。" : "等待己方回合后可下达指令。"}</p>${["city", "factory", "hq"].includes(tile.type) ? `<p>据点：${tile.owner === null ? "中立" : esc(names[tile.owner])} · 剩余占领值 ${tile.capture ?? 20}</p>` : ""}<div class="command-list">${commands}</div></div>`;
+    const cargo = Array.isArray(unit.cargo) ? unit.cargo : [];
+    const status = [
+      unit.type === "submarine" ? (unit.submerged ? "状态：下潜中" : "状态：水面航行") : "",
+      ["transport_heli", "lander"].includes(unit.type)
+        ? `载员：${cargo.length} / ${unit.type === "lander" ? 2 : 1}${cargo.length ? ` · ${cargo.map((passenger) => UNITS[passenger.type]?.name || passenger.type).join("、")}` : ""}`
+        : "",
+    ].filter(Boolean).map((line) => `<p class="unit-status">${esc(line)}</p>`).join("");
+    panel.innerHTML = `<div class="selection-top"><div><span class="eyebrow">${esc(names[unit.owner])} / UNIT ${esc(unit.id)}</span><h2>${esc(definition.name)}</h2></div><span class="hp-badge">${unit.hp}<small>兵力 / 10</small></span></div><div class="selection-content"><div class="unit-stats"><div><span>移动 / 射程</span><strong>${definition.move} / ${definition.minRange}–${definition.maxRange}</strong></div><div><span>弹药 / 燃料</span><strong>${unit.ammo === null || unit.ammo === undefined ? "∞" : unit.ammo} / ${Math.floor(unit.fuel || 0)}</strong></div><div><span>地形防御</span><strong>${TERRAINS[tile.type]?.defense || 0} ★</strong></div></div>${status}${combat}<p>${can ? (targetId ? "确认后结算伤害与反击。" : destination ? "目的地已预选。再点一次目的地即可移动，或点红色目标攻击。" : "按住部队拖出红色箭头选路线，或点击青色格预选移动。") : unit.acted ? "该部队已行动，下个己方回合恢复。" : unit.owner !== session.seat ? "观察敌我部署，利用射程与地形安排推进。" : "等待己方回合后可下达指令。"}</p>${["city", "factory", "hq", "port", "airport"].includes(tile.type) ? `<p>据点：${tile.owner === null ? "中立" : esc(names[tile.owner])} · 剩余占领值 ${tile.capture ?? 20}</p>` : ""}<div class="command-list">${commands}</div></div>`;
     // ★ F5：命令菜单跟随**选定的终点格**弹出 + 底部说明栏给默认文案
     //
     // 锚点必须是终点、不是部队：菜单这时还没出现（要先落点确认），
@@ -1168,45 +1368,50 @@ function renderSelection() {
             } else resetSelection();
             renderBattle();
           } else
-            performAction({
-              type: "move",
-              unitId: unit.id,
-              x: pos.x,
-              y: pos.y,
-              command,
-              ...(command === "attack" ? { targetId } : {}),
-            });
+            performAction(moveCommandAction(unit.id, pos, command, {
+              targetId: command === "attack" ? targetId : button.dataset.targetId,
+              targetX: button.dataset.targetX,
+              targetY: button.dataset.targetY,
+            }));
         }),
     );
   } else if (selectedTile) {
     const tile = tileAt(state, selectedTile.x, selectedTile.y),
       type = TERRAINS[tile.type] || { name: tile.type, defense: 0 },
-      factory = tile.type === "factory" && tile.owner === session.seat,
+      facility = ["factory", "airport", "port"].includes(tile.type) && tile.owner === session.seat,
       owner = tile.owner === null ? "中立区域" : names[tile.owner];
-    panel.innerHTML = `<div class="selection-top"><div><span class="eyebrow">TERRAIN / ${selectedTile.x + 1}:${selectedTile.y + 1}</span><h2>${esc(type.name)}</h2></div><span class="hp-badge">${type.defense || 0}<small>防御星级</small></span></div><div class="selection-content"><p>${esc(owner)}${["city", "factory", "hq"].includes(tile.type) ? " · 据点每回合提供资金。友方地面部队在此可维修补给。" : ""}</p><p>${factory ? "选择新部队部署到工厂。新生产的单位下个回合才能行动。" : tile.type === "water" ? "陆军无法穿越水域，请寻找桥梁。" : tile.type === "mountain" ? "步兵可登山，车辆需要绕行。" : "地形会影响移动消耗与防御。"}</p>${factory ? `<div class="command-list"><button id="open-build" ${!isMyTurn() || busy ? "disabled" : ""}>＋ 部署部队</button></div>` : ""}</div>`;
+    const property = ["city", "factory", "hq", "port", "airport"].includes(tile.type);
+    const terrainHint = facility
+      ? `选择新部队部署到${type.name}。新生产的单位下个回合才能行动。`
+      : ["water", "shoal"].includes(tile.type)
+        ? "陆军无法穿越水域，请寻找桥梁或使用运输单位。"
+        : tile.type === "mountain"
+          ? "步兵可登山，车辆需要绕行。"
+          : "地形会影响移动消耗与防御。";
+    panel.innerHTML = `<div class="selection-top"><div><span class="eyebrow">TERRAIN / ${selectedTile.x + 1}:${selectedTile.y + 1}</span><h2>${esc(type.name)}</h2></div><span class="hp-badge">${type.defense || 0}<small>防御星级</small></span></div><div class="selection-content"><p>${esc(owner)}${property ? " · 据点每回合提供资金与补给。" : ""}</p><p>${esc(terrainHint)}</p>${facility ? `<div class="command-list"><button id="open-build" ${!isMyTurn() || busy ? "disabled" : ""}>＋ 部署部队</button></div>` : ""}</div>`;
     // ★ F5：地形的说明也进底部说明栏（原来是面板里的两段散文）
     menuAnchor = { x: selectedTile.x, y: selectedTile.y };
     const buildButton = panel.querySelector("#open-build");
     if (buildButton) buildButton.dataset.desc = COMMAND_DESCRIPTIONS.build;
     wireCommandDescriptions(panel);
     setCommandBar(
-      factory
-        ? "己方工厂：可以部署新部队。"
+      facility
+        ? `己方${type.name}：可以部署新部队。`
         : `${type.name}｜${esc(owner)}${
-            ["city", "factory", "hq"].includes(tile.type)
-              ? " · 据点每回合提供资金，友方地面部队在此可维修补给"
+            property
+              ? " · 据点每回合提供资金与补给"
               : ""
           }`,
     );
-    if (factory)
+    if (facility)
       $("#open-build").onclick = () =>
         showBuild(selectedTile.x, selectedTile.y);
   } else {
     menuAnchor = null;
-    panel.innerHTML = `<div class="selection-hint"><div class="crosshair">⌖</div><h3>${isMyTurn() ? "选择一支部队" : "观察战场"}</h3><p>${isMyTurn() ? "点击己方单位查看行动范围。<br>点击空闲的己方工厂生产部队。" : "查看部队与地形，规划下一回合。<br>其他玩家的行动会实时同步。"}</p></div>`;
+    panel.innerHTML = `<div class="selection-hint"><div class="crosshair">⌖</div><h3>${isMyTurn() ? "选择一支部队" : "观察战场"}</h3><p>${isMyTurn() ? "点击己方单位查看行动范围。<br>点击空闲的己方工厂、机场或港口生产部队。" : "查看部队与地形，规划下一回合。<br>其他玩家的行动会实时同步。"}</p></div>`;
     setCommandBar(
       isMyTurn()
-        ? "点击己方部队开始行动；点击己方工厂生产新部队。"
+        ? "点击己方部队开始行动；点击己方工厂、机场或港口生产新部队。"
         : "观察战场，规划下一回合。其他玩家的行动会实时同步。",
     );
   }
@@ -1251,15 +1456,22 @@ async function performAction(action) {
   }
 }
 function showBuild(x, y) {
+  const tile = tileAt(room.state, x, y);
+  if (tile.owner !== session.seat || !["factory", "airport", "port"].includes(tile.type)) return;
   const funds = ownPlayer().funds;
+  const facilityName = TERRAINS[tile.type].name;
+  const portraits = new Set(["infantry", "mech", "recon", "tank", "heavy", "artillery", "rocket", "apc"]);
+  const choices = unitsForFacility(UNITS, tile.type);
   openActionModal(
     "部署新部队",
-    `<p class="modal-description">工厂 ${x + 1}:${y + 1} · 可用资金 <strong>${number(funds)}</strong></p><div class="build-list">${Object.entries(
-      UNITS,
-    )
+    `<p class="modal-description">${esc(facilityName)} ${x + 1}:${y + 1} · 可用资金 <strong>${number(funds)}</strong></p><div class="build-list">${choices
       .map(
-        ([type, unit]) =>
-          `<button class="build-option" data-unit="${type}" ${unit.cost > funds ? "disabled" : ""}><img class="build-symbol unit-portrait" src="/media/units/${type}.webp" alt="${esc(unit.name)}" width="44" height="44" loading="lazy" /><span><strong>${esc(unit.name)}</strong><small>移动 ${unit.move} · 射程 ${unit.minRange}–${unit.maxRange} · ${esc(unit.description || "")}</small></span><span class="cost">${number(unit.cost)}</span></button>`,
+        ([type, unit]) => {
+          const portrait = portraits.has(type)
+            ? `/media/units/${type}.webp`
+            : unitPortraitDataUrl(type, TEAM_PALETTES[session.seat]);
+          return `<button class="build-option" data-unit="${esc(type)}" ${unit.cost > funds ? "disabled" : ""}><img class="build-symbol unit-portrait" src="${esc(portrait)}" alt="${esc(unit.name)}" width="44" height="44" loading="lazy" /><span><strong>${esc(unit.name)}</strong><small>移动 ${unit.move} · 射程 ${unit.minRange}–${unit.maxRange} · ${esc(unit.description || "")}</small></span><span class="cost">${number(unit.cost)}</span></button>`;
+        },
       )
       .join("")}</div>`,
     "REINFORCEMENTS / 部队生产",
@@ -1331,6 +1543,11 @@ function showVictory(force = false) {
   const key = `${room.id}:${room.state.turn}`;
   if (victoryShown === key && !force) return;
   victoryShown = key;
+  const record = recordOf(room, room.state);
+  if (record && recordMatch(record)) {
+    paintAvatarButton();
+    toast(record.won ? "本局已记入战绩：胜利" : "本局已记入战绩：失败");
+  }
   const won = ownPlayer().team === room.state.winner,
     state = room.state,
     winners = state.players
@@ -1390,7 +1607,7 @@ function goHome() {
   victoryShown = null;
   resetSelection();
   showScreen("landing");
-  setNetwork("局域网服务就绪");
+  setNetwork("作战服务就绪");
   $("#footer-message").textContent = "保持观察，等待你的机会。";
   updateResume();
 }
@@ -1409,10 +1626,30 @@ $("#home-button").onclick = () => {
 $("#lobby-back").onclick = goHome;
 function createDialog() {
   openModal(
-    "建立作战房间",
-    `<p class="modal-description">房间创建后即可邀请朋友。其余席位默认由电脑补齐。</p><form id="create-form"><div class="form-grid"><div class="form-field"><label for="create-name">你的呼号</label><input id="create-name" maxlength="18" required value="${esc(nickname())}" autocomplete="nickname"></div><div class="form-field"><label for="create-count">作战人数</label><select id="create-count"><option value="2">2 人</option><option value="3">3 人混战</option><option value="4">4 人</option></select></div><div class="form-field"><label for="create-map">战场</label><select id="create-map">${mapOptions()}</select></div><div class="form-field"><label for="create-co">指挥官</label><select id="create-co">${commanderOptions()}</select></div></div><div class="form-error" id="create-error"></div><button class="button primary large" type="submit">创建房间 <b>→</b></button></form>`,
+    "建立作战",
+    `<p class="modal-description">选好战场即可出击。空位由电脑接管，朋友可随时加入。</p><form id="create-form"><div class="form-grid"><div class="form-field"><label for="create-name">你的呼号</label><input id="create-name" maxlength="18" required value="${esc(nickname())}" autocomplete="nickname"></div><div class="form-field"><label for="create-count">作战人数</label><select id="create-count"><option value="2">2 人</option><option value="3">3 人混战</option><option value="4">4 人</option></select></div><div class="form-field"><label for="create-map-search">查找战场</label><input id="create-map-search" type="search" placeholder="名称、地形或战术" autocomplete="off"><label for="create-map">战场</label><select id="create-map" required>${mapOptions()}</select><small id="create-map-info" class="map-picker-info"></small></div><div class="form-field"><label for="create-co">指挥官</label><select id="create-co">${commanderOptions()}</select></div></div><div class="form-error" id="create-error"></div><button class="button primary large" type="submit">出击 <b>→</b></button></form>`,
     "CREATE OPERATION / 战前集结",
   );
+  const mapSelect = $("#create-map");
+  const describeMap = () => {
+    const map = MAPS.find((candidate) => candidate.id === mapSelect.value);
+    $("#create-map-info").textContent = map
+      ? `${mapCategory(map)} · ${map.description}`
+      : "调整人数或搜索词以查找战场。";
+  };
+  const refreshMaps = () => {
+    const count = Number($("#create-count").value);
+    const choices = mapsForPlayerCount(MAPS, count, $("#create-map-search").value);
+    const selected = choices.some((map) => map.id === mapSelect.value)
+      ? mapSelect.value : choices[0]?.id || "";
+    mapSelect.innerHTML = mapOptions(selected, count, $("#create-map-search").value);
+    mapSelect.value = selected;
+    describeMap();
+  };
+  $("#create-count").addEventListener("change", refreshMaps);
+  $("#create-map-search").addEventListener("input", refreshMaps);
+  mapSelect.addEventListener("change", describeMap);
+  describeMap();
   $("#create-form").onsubmit = async (event) => {
     event.preventDefault();
     const button = event.submitter;
@@ -1436,29 +1673,14 @@ function createDialog() {
   };
 }
 $("#create-room").onclick = createDialog;
-$("#quick-start").onclick = () =>
-  safe(async () => {
-    const button = $("#quick-start");
-    button.disabled = true;
-    try {
-      const result = await api("/api/rooms", {
-        name: nickname(),
-        playerCount: 2,
-        mapId: "training",
-        commander: "vanguard",
-        mode: "ffa",
-      });
-      attachSession(result);
-      await roomRequest("start");
-      toast("演习开始：点击赤焰军单位，选择移动位置，再下达命令。");
-    } finally {
-      button.disabled = false;
-    }
-  });
 function joinDialog(prefill = "") {
   openModal(
     "加入作战房间",
-    `<p class="modal-description">在房主的服务地址打开本页，输入房间码加入。两台设备需要处于同一局域网。</p><form id="join-form"><div class="form-grid"><div class="form-field"><label for="join-code">房间码</label><input id="join-code" maxlength="12" placeholder="例如 AB12CD" required value="${esc(prefill)}" style="text-transform:uppercase" autocomplete="off"></div><div class="form-field"><label for="join-name">你的呼号</label><input id="join-name" maxlength="18" required value="${esc(nickname())}" autocomplete="nickname"></div><div class="form-field wide"><label for="join-co">指挥官</label><select id="join-co">${commanderOptions("mechanic")}</select></div></div><div class="form-error" id="join-error"></div><button class="button primary large" type="submit">加入战场 <b>→</b></button></form><div class="room-list" id="available-rooms"></div>`,
+    `<p class="modal-description">${
+      publicMode
+        ? "在房主给你的地址打开本页，输入房间码加入。"
+        : "在房主的服务地址打开本页，输入房间码加入。两台设备需要处于同一局域网。"
+    }</p><form id="join-form"><div class="form-grid"><div class="form-field"><label for="join-code">房间码</label><input id="join-code" maxlength="12" placeholder="例如 AB12CD" required value="${esc(prefill)}" style="text-transform:uppercase" autocomplete="off"></div><div class="form-field"><label for="join-name">你的呼号</label><input id="join-name" maxlength="18" required value="${esc(nickname())}" autocomplete="nickname"></div><div class="form-field wide"><label for="join-co">指挥官</label><select id="join-co">${commanderOptions("mechanic")}</select></div></div><div class="form-error" id="join-error"></div><button class="button primary large" type="submit">加入战场 <b>→</b></button></form><div class="room-list" id="available-rooms"></div>`,
     "JOIN OPERATION / 接入战场",
   );
   $("#join-form").onsubmit = async (event) => {
@@ -1486,10 +1708,19 @@ function joinDialog(prefill = "") {
   };
   api("/api/rooms")
     .then((result) => {
+      publicMode = !!result.publicMode;
       const list = $("#available-rooms");
       if (!list) return;
-      list.innerHTML = result.rooms
-        .filter((r) => r.phase === "lobby")
+      const waiting = (result.rooms || []).filter((r) => r.phase === "lobby");
+      if (!waiting.length) {
+        list.innerHTML = `<p class="muted">${
+          publicMode
+            ? "公网作战不列出公开房间。请向房主索取房间码，在上方输入即可加入。"
+            : "当前没有等待中的房间。房主启动服务并建房后，这里会显示可加入的房间。"
+        }</p>`;
+        return;
+      }
+      list.innerHTML = waiting
         .slice(0, 5)
         .map(
           (r) =>
@@ -1536,7 +1767,7 @@ $("#resume-game").onclick = () =>
 function help() {
   openModal(
     "战地手册",
-    `<section class="help-section"><h3>01 / 下达第一条指令</h3><p><strong>按住</strong>己方部队约 0.1 秒，青色行动范围展开；<strong>别松手直接拖</strong>，会拉出一条红色移动箭头，随你的光标沿真实路线拐弯。松手钉住箭头，再点地图上的目的地（或点右侧「移动并待机」）部队才会前进。也可以沿用老办法：点单位 → 点青色格 → 选命令。攻击则为：预选落点后点红色敌军，再点「确认攻击」。预选移动可以取消；执行后的指令不可撤销。</p></section><section class="help-section"><h3>02 / 用地形与射程赢得交换</h3><p>单位每回合行动一次。森林、山地和据点提供防御。步兵可登山，车辆必须绕行。火炮与火箭炮具有最小射程，移动后不能开火；近战单位会在条件允许时反击。</p></section><section class="help-section"><h3>03 / 占领、生产与补给</h3><p>步兵与机步兵能占领城市、工厂与总部，单次占领推进量取决于剩余血量。点击空闲的己方工厂生产部队。占领据点带来收入；己方据点能维修和补给。补给车可补充邻近部队的弹药与燃料。</p></section><section class="help-section"><h3>04 / 指挥官与胜利条件</h3><p>交战积累指挥能量，50 点可发动普通能力，100 点可发动超级能力。占领敌方总部可使其出局；失去全部单位与工厂也会出局。最后存活的一方或队伍获胜。2v2 中队友资金独立。</p></section><section class="help-section"><h3>05 / 局域网与存档</h3><p>房主创建房间，把邀请地址发给同一局域网内的朋友。支持 2–4 人，空闲电脑席位可在开局前被玩家加入。每次行动自动保存，「保存对局」另存手动快照。断线后使用原浏览器重连，原席位会保留。房主浏览器可以关闭，运行服务的电脑需保持在线。</p></section><section class="help-section"><h3>06 / 操作与首版范围</h3><p><span class="key">Esc</span> 取消预选 / 关闭弹窗　<span class="key">Space</span> 结束回合</p><p>本版提供 8 种陆军、3 张地图与 2 名原创指挥官，全图可见。补给车暂不载兵。海空军、战争迷雾与战役剧情留待后续扩展。</p></section>`,
+    `<section class="help-section"><h3>01 / 下达第一条指令</h3><p><strong>按住</strong>己方部队约 0.1 秒，青色行动范围展开；<strong>别松手直接拖</strong>，会拉出一条红色移动箭头，随你的光标沿真实路线拐弯。松手钉住箭头，再点地图上的目的地（或点右侧「移动并待机」）部队才会前进。也可以沿用老办法：点单位 → 点青色格 → 选命令。攻击则为：预选落点后点红色敌军，再点「确认攻击」。预选移动可以取消；执行后的指令不可撤销。</p></section><section class="help-section"><h3>02 / 用地形与射程赢得交换</h3><p>单位每回合行动一次。森林、山地和据点提供防御。步兵可登山，车辆必须绕行。火炮与火箭炮具有最小射程，移动后不能开火；近战单位会在条件允许时反击。</p></section><section class="help-section"><h3>03 / 占领、生产与补给</h3><p>步兵与机步兵能占领城市、工厂、机场、港口与总部，单次占领推进量取决于剩余血量。点击空闲的己方工厂、机场或港口，分别生产陆军、空军或海军。占领据点带来收入；己方据点能维修和补给。补给车可补充邻近部队的弹药与燃料。</p></section><section class="help-section"><h3>04 / 指挥官与胜利条件</h3><p>交战积累指挥能量，50 点可发动普通能力，100 点可发动超级能力。占领敌方总部可使其出局；失去全部单位与工厂也会出局。最后存活的一方或队伍获胜。2v2 中队友资金独立。</p></section><section class="help-section"><h3>05 / 局域网与存档</h3><p>房主创建房间，把邀请地址发给同一局域网内的朋友。支持 2–4 人，空闲电脑席位可在开局前被玩家加入。每次行动自动保存，「保存对局」另存手动快照。断线后使用原浏览器重连，原席位会保留。房主浏览器可以关闭，运行服务的电脑需保持在线。</p></section><section class="help-section"><h3>06 / 操作与当前内容</h3><p><span class="key">Esc</span> 取消预选 / 关闭弹窗　<span class="key">Space</span> 结束回合</p><p>本版提供 25 种陆海空兵种、47 张地图与 2 名原创指挥官，全图可见。运输直升机可载步兵，登陆舰可载陆军；潜艇可下潜，维修艇可修复相邻舰船。补给车暂不载兵。战争迷雾与战役剧情留待后续扩展。</p></section>`,
     "FIELD MANUAL / 指挥入门",
   );
 }
@@ -1577,14 +1808,15 @@ document.addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("online", () =>
-  setNetwork(session ? "重新连接房间…" : "局域网服务就绪"),
+  setNetwork(session ? "重新连接房间…" : "作战服务就绪"),
 );
 window.addEventListener("offline", () => setNetwork("网络已断开", true));
 updateResume();
 api("/api/rooms")
   .then((result) => {
+    publicMode = !!result.publicMode;
     serviceURLs = result.urls || [];
-    setNetwork("局域网服务就绪");
+    setNetwork("作战服务就绪");
     const code = new URLSearchParams(location.search).get("room");
     if (code) {
       const normalized = code.trim().toUpperCase();

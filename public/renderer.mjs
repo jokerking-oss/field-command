@@ -87,7 +87,7 @@ function paintGround(ctx, tile) {
 function paintWater(ctx, tile, neighbors) {
   box(ctx, 0, 0, TILE, TILE, "#578f9c");
   box(ctx, 0, 0, TILE, 2, "#609aa4");
-  const land = (t) => t && t.type !== "water" && t.type !== "bridge";
+  const land = (t) => t && !["water", "sea", "shoal", "bridge", "port"].includes(t.type);
   if (land(neighbors.up)) {
     box(ctx, 0, 0, TILE, 5, "#a7b185");
     box(ctx, 0, 5, TILE, 2, "#8fb4ad");
@@ -109,7 +109,7 @@ function paintWater(ctx, tile, neighbors) {
 }
 function paintRoad(ctx, neighbors, bridge = false) {
   const connects = (t) =>
-    t && ["road", "bridge", "city", "factory", "hq"].includes(t.type);
+    t && ["road", "bridge", "city", "factory", "hq", "airport", "port"].includes(t.type);
   let u = connects(neighbors.up),
     d = connects(neighbors.down);
   let l = connects(neighbors.left),
@@ -303,13 +303,65 @@ function paintBuilding(ctx, tile) {
     box(ctx, 4, 33, 31, 2, "#d4c8a3");
   }
 }
+function paintShoal(ctx, tile, neighbors) {
+  paintWater(ctx, tile, neighbors);
+  box(ctx, 3, 29, 16, 5, "#9cbdab");
+  box(ctx, 5, 27, 10, 2, "#c3c9a7");
+  box(ctx, 22, 8, 12, 3, "#9ac5bb");
+  box(ctx, 27, 5, 5, 2, "#d4d1af");
+  for (const [x,y] of [[5,16],[17,20],[26,29],[32,17]]) box(ctx,x,y,4,1,"#c7e2d4");
+}
+function paintPort(ctx, tile, neighbors) {
+  paintWater(ctx, tile, neighbors);
+  const p = palette(tile.owner);
+  box(ctx, 0, 1, 16, 39, "#a5b29a");
+  box(ctx, 0, 2, 14, 37, "#c8bf9f");
+  for (let y = 3; y < 39; y += 8) box(ctx, 3, y, 11, 1, "#928a70");
+  box(ctx, 13, 0, 3, 40, "#536e6d");
+  box(ctx, 16, 28, 23, 4, "#465c5d");
+  box(ctx, 18, 25, 18, 5, p[2]);
+  box(ctx, 21, 24, 11, 2, p[0]);
+  box(ctx, 20, 32, 15, 2, "#2b535e");
+  box(ctx, 7, 7, 2, 19, "#435e61");
+  box(ctx, 8, 7, 15, 2, p[1]);
+  box(ctx, 20, 8, 2, 12, "#435e61");
+  box(ctx, 18, 18, 6, 3, "#e4d4a3");
+}
+function paintAirport(ctx, tile) {
+  const p = palette(tile.owner);
+  box(ctx, 0, 0, 40, 40, "#799575");
+  box(ctx, 17, 0, 16, 40, "#4d6261");
+  box(ctx, 18, 0, 13, 40, "#6c7770");
+  for (let y = 3; y < 39; y += 9) box(ctx, 24, y, 2, 5, "#e6d9ae");
+  box(ctx, 1, 12, 15, 23, "#4e6b66");
+  box(ctx, 3, 10, 13, 23, "#d4c9a8");
+  box(ctx, 2, 8, 15, 5, p[2]);
+  box(ctx, 4, 6, 12, 3, p[1]);
+  box(ctx, 4, 6, 9, 1, p[0]);
+  box(ctx, 5, 17, 9, 9, "#668581");
+  box(ctx, 5, 17, 9, 2, "#354f55");
+  box(ctx, 34, 22, 4, 12, "#60746e");
+  box(ctx, 33, 19, 6, 3, "#e2dbb9");
+}
+function paintRail(ctx) {
+  box(ctx, 0, 9, 40, 22, "#9e9d7d");
+  for (let x = 1; x < 40; x += 7) box(ctx, x, 11, 3, 18, "#786b57");
+  box(ctx, 0, 14, 40, 2, "#425b5c");
+  box(ctx, 0, 24, 40, 2, "#425b5c");
+  box(ctx, 0, 14, 40, 1, "#adaba0");
+  box(ctx, 0, 24, 40, 1, "#adaba0");
+}
 function paintTile(ctx, tile, neighbors) {
   ctx.save();
   ctx.translate(tile.x * TILE, tile.y * TILE);
   paintGround(ctx, tile);
   switch (tile.type) {
     case "water":
+    case "sea":
       paintWater(ctx, tile, neighbors);
+      break;
+    case "shoal":
+      paintShoal(ctx, tile, neighbors);
       break;
     case "bridge":
       paintWater(ctx, tile, neighbors);
@@ -317,6 +369,15 @@ function paintTile(ctx, tile, neighbors) {
       break;
     case "road":
       paintRoad(ctx, neighbors);
+      break;
+    case "rail":
+      paintRail(ctx);
+      break;
+    case "coast":
+      box(ctx, 0, 26, 40, 14, "#c4ba91");
+      box(ctx, 0, 23, 40, 3, "#ddcca0");
+      box(ctx, 2, 21, 11, 2, "#edf1d2");
+      box(ctx, 23, 20, 12, 2, "#edf1d2");
       break;
     case "forest":
       tree(ctx, 22, 4, 1, 1);
@@ -332,6 +393,12 @@ function paintTile(ctx, tile, neighbors) {
     case "factory":
     case "hq":
       paintBuilding(ctx, tile);
+      break;
+    case "port":
+      paintPort(ctx, tile, neighbors);
+      break;
+    case "airport":
+      paintAirport(ctx, tile);
       break;
     default:
       if (hash(tile.x, tile.y, 5) % 9 === 0) {
@@ -351,6 +418,9 @@ function paintUnit(ctx, unit, x, y, motion) {
   ctx.translate(Math.round(x), Math.round(y));
   const resting = motion.action === "idle";
   if (unit.acted && resting) ctx.globalAlpha = 0.74;
+  if (unit.submerged) ctx.globalAlpha *= motion.action === "submerge"
+    ? 1 - .45 * motion.phase : .55;
+  else if (motion.action === "surface") ctx.globalAlpha *= .55 + .45 * motion.phase;
   box(ctx, 6, 29, 29, 4, "rgba(24,45,42,.25)");
   box(ctx, 10, 33, 20, 1, "rgba(24,45,42,.15)");
   paintDirectionalMotion(ctx, unit.type, p, motion.direction || "right", motion.phase, motion.action);
@@ -368,10 +438,14 @@ function paintUnit(ctx, unit, x, y, motion) {
   ctx.textBaseline = "middle";
   ctx.textAlign = "center";
   ctx.fillText(`${Math.ceil(unit.hp)}/10`, 23.5, 36.5);
-  if (unit.cargo) {
+  if (unit.cargo && (!Array.isArray(unit.cargo) || unit.cargo.length > 0)) {
     box(ctx, 3, 27, 7, 8, "#263f3b");
     box(ctx, 5, 28, 3, 2, "#ffe4a3");
     box(ctx, 4, 31, 5, 3, "#ffe4a3");
+  }
+  if (unit.type === "submarine" && (unit.submerged || motion.action === "surface" || motion.action === "submerge")) {
+    box(ctx, 5, 11, 3, 2, "#a5d6d5");
+    box(ctx, 10, 7 + Math.floor(motion.phase * 3), 2, 2, "#c4e6dd");
   }
   if (unit.ammo === 0 || unit.fuel === 0) {
     box(ctx, 30, 3, 7, 8, "#ffe1a2");
@@ -564,7 +638,7 @@ export function capturesFromStates(before, after) {
     const key = tileKey(unit.x, unit.y);
     const tile = tiles.get(key), previous = oldTiles.get(key);
     if (!old || old.acted || !unit.acted || !UNITS[unit.type]?.capture ||
-      !tile || !previous || !["city", "factory", "hq"].includes(tile.type)) return [];
+      !tile || !previous || !["city", "factory", "hq", "port", "airport"].includes(tile.type)) return [];
     if (tile.capture === previous.capture && tile.captureBy === previous.captureBy &&
       tile.owner === previous.owner) return [];
     return [{ unit, tile, previousTile: previous }];
@@ -604,7 +678,7 @@ export function combatFromStates(before, after) {
         attacker: { ...attacker, x: origin.x, y: origin.y, hpAfter: current?.hp ?? 0 },
         defender: { ...defender, hpAfter: defenderAfter?.hp ?? 0 },
         damage: defender.hp - (defenderAfter?.hp ?? 0),
-        counter: attacker.hp - (current?.hp ?? 0),
+        counter: attacker.type === "drone" ? 0 : attacker.hp - (current?.hp ?? 0),
       };
     }
   }
@@ -934,6 +1008,17 @@ export function createRenderer(
             const delay = move ? Math.max(0, move.start + move.duration - now) : 0;
             actionEvents.push({ id: u.id, action: "supply", start: now + delay, duration: 1050 });
           }
+          if (old && old.type === "repair_boat" && !old.acted && u.acted) {
+            const move = movement.get(u.id);
+            const delay = move ? Math.max(0, move.start + move.duration - now) : 0;
+            actionEvents.push({ id: u.id, action: "supply", start: now + delay, duration: 1050 });
+          }
+          if (old && old.type === "submarine" && old.submerged !== u.submerged) {
+            const move = movement.get(u.id);
+            const delay = move ? Math.max(0, move.start + move.duration - now) : 0;
+            actionEvents.push({ id: u.id, action: u.submerged ? "submerge" : "surface",
+              start: now + delay, duration: 1050 });
+          }
         }
         for (const { unit, tile, previousTile } of capturesFromStates(previousState, state)) {
           const move = movement.get(unit.id);
@@ -973,7 +1058,8 @@ export function createRenderer(
             attacker: { ...exchange.attacker, x: attackerAt.x, y: attackerAt.y },
             defender: exchange.defender,
             defenderHitAt: battleStart + COMBAT_TIMING.firstHit,
-            counterHitAt: exchange.counter > 0 ? battleStart + COMBAT_TIMING.counterHit : Infinity,
+            counterHitAt: exchange.counter > 0 ? battleStart + COMBAT_TIMING.counterHit
+              : exchange.attacker.type === "drone" ? battleStart + COMBAT_TIMING.firstHit : Infinity,
             endAt: battleStart + combatDuration(exchange.counter),
           };
           onCombat({
@@ -1004,7 +1090,7 @@ export function createRenderer(
           if (old && old.hp > u.hp) {
             const start = exchange?.defender.id === u.id
               ? combatVisual.defenderHitAt
-              : exchange?.attacker.id === u.id && exchange.counter > 0
+                : exchange?.attacker.id === u.id && (exchange.counter > 0 || exchange.attacker.type === "drone")
                 ? combatVisual.counterHitAt : now;
             explosions.push({ x: u.x, y: u.y, start, destroyed: false });
           }
@@ -1017,7 +1103,7 @@ export function createRenderer(
               x: position.x, y: position.y, type: old.type, owner: old.owner, destroyed: true,
               start: exchange?.defender.id === old.id
                 ? combatVisual.defenderHitAt
-                : exchange?.attacker.id === old.id && exchange.counter > 0
+                : exchange?.attacker.id === old.id && (exchange.counter > 0 || exchange.attacker.type === "drone")
                   ? combatVisual.counterHitAt : now,
             });
           }
@@ -1056,8 +1142,8 @@ export function createRenderer(
     for (const tile of state.tiles) {
       const x = tile.x * TILE,
         y = tile.y * TILE;
-      if (tile.type === "water" || tile.type === "bridge") {
-        if (tile.type === "water") {
+      if (["water", "sea", "shoal", "bridge", "port"].includes(tile.type)) {
+        if (["water", "sea", "shoal"].includes(tile.type)) {
           const wave = Math.floor(time / 700 + (hash(tile.x, tile.y) % 5)) % 4;
           const shift = wave > 1 ? 2 : 0;
           box(ctx, x + 12 + shift, y + 12, 8, 1, "#7ab0b4");
@@ -1066,7 +1152,7 @@ export function createRenderer(
           box(ctx, x + 9, y + 31, 3, 1, "#4e8796");
         }
       }
-      if (["city", "factory", "hq"].includes(tile.type)) {
+      if (["city", "factory", "hq", "port", "airport"].includes(tile.type)) {
         if (paintPropertyFlag?.(ctx, tile, time) !== true) {
           const pose = propertyFlagPose(tile, captureVisuals.get(tileKey(tile.x, tile.y)), time);
           if (pose.owner != null) {

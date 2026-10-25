@@ -1,4 +1,15 @@
 // Original 40×40 pixel unit artwork, approved from the standalone preview.
+import { paintAntiAirGun } from "./art/anti-air.mjs";
+import { paintSAM } from "./art/sam.mjs";
+import { paintExpansionTank } from "./art/expansion-tanks.mjs";
+import { paintRailUnit } from "./art/rail.mjs";
+import { paintInterceptor, paintBomber } from "./art/fixed-wing.mjs";
+import { paintAttackHelicopter, paintTransportHelicopter } from "./art/helicopters.mjs";
+import { paintStealthReconJet, paintBlastDrone } from "./art/special-air.mjs";
+import { paintSeaUnit } from "./art/sea.mjs";
+import { paintBattleship } from "./art/battleship.mjs";
+import { paintLandingShip } from "./art/lander.mjs";
+import { paintRepairBoat } from "./art/repair-boat.mjs";
 function box(ctx,x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),w,h);}
 function face(ctx,points,color){
   const ys=points.map(p=>p[1]);
@@ -364,6 +375,23 @@ export function paintUnitArtwork(ctx, type, palette) {
     case "artillery": return artillery(ctx, palette);
     case "rocket": return rocket(ctx, palette);
     case "apc": return supply(ctx, palette);
-    default: return rifleman(ctx, palette);
+    case "aa": return paintAntiAirGun(ctx, palette);
+    case "sam": return paintSAM(ctx, palette);
+    case "assault":
+    case "siege": return paintExpansionTank(ctx, type, palette);
+    case "rail": return paintRailUnit(ctx, palette);
+    case "interceptor": return paintInterceptor(ctx, palette);
+    case "bomber": return paintBomber(ctx, palette);
+    case "attack_heli": return paintAttackHelicopter(ctx, palette);
+    case "transport_heli": return paintTransportHelicopter(ctx, palette);
+    case "stealth": return paintStealthReconJet(ctx, palette);
+    case "drone": return paintBlastDrone(ctx, palette);
+    case "battleship": return paintBattleship(ctx, palette);
+    case "lander": return paintLandingShip(ctx, palette);
+    case "repair_boat": return paintRepairBoat(ctx, palette);
+    case "cruiser":
+    case "submarine":
+    case "carrier": return paintSeaUnit(ctx, type, palette);
+    default: return null;
   }
 }
