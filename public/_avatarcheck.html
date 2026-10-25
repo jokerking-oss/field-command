@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>avatarcheck</title>
+    <link rel="stylesheet" href="/profile.css" />
+    <style>
+      body { background: #1b2028; color: #e6e9ee; font-family: system-ui, sans-serif; padding: 20px; }
+      #profile-button { width: 34px; height: 34px; }
+      #log { margin-top: 16px; font-size: 13px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <button class="avatar-button" id="profile-button"></button>
+    <div class="profile-avatar-grid" id="grid"></div>
+    <div id="log"></div>
+    <!--
+      验证个人档案模块：徽章能否渲染、战绩能否记录与统计。
+      跑法：headless 打开本页，读 document.title 看结论（PASS / ERR …）。
+    -->
+    <script type="module">
+      import {
+        AVATAR_COUNT, avatarSvg, clearRecords, loadProfile, loadRecords,
+        recordMatch, saveProfile, statsFor,
+      } from "/profile.mjs";
+
+      const log = (s) => { document.title = s; document.getElementById("log").textContent += s + "\n"; };
+      const fail = (s) => { log("ERR " + s); throw new Error(s); };
+
+      try {
+        const svgs = Array.from({ length: AVATAR_COUNT }, (_, i) => avatarSvg(i, 4));
+        const blocks = svgs.map((s) => (s.match(/<rect/g) || []).length - 1);
+        if (blocks.some((n) => n < 8 || n > 55)) fail("avatar-shape " + blocks.join(","));
+        document.getElementById("grid").innerHTML =
+          svgs.map((s, i) => `<button aria-pressed="${i === 0}">${s}</button>`).join("");
+        if (document.querySelectorAll("#grid button").length !== AVATAR_COUNT) fail("grid-count");
+        log("avatars=" + AVATAR_COUNT + " blocks=" + blocks.slice(0, 4).join("/"));
+
+        const profile = loadProfile();
+        if (!profile.id || profile.id.length < 8) fail("profile-id");
+        saveProfile({ avatar: 5, callsign: "测试员" });
+        const saved = loadProfile();
+        if (saved.avatar !== 5 || saved.callsign !== "测试员") fail("profile-save");
+        log("profile=ok id=" + profile.id.slice(0, 6) + " avatar=" + saved.avatar);
+
+        clearRecords();
+        if (loadRecords().length !== 0) fail("clear-records");
+        const ok1 = recordMatch({ key: "R1:3", won: true, mapId: "atlas-01", mapName: "雾松平原", day: 12, opponents: "电脑 2" });
+        const dup = recordMatch({ key: "R1:3", won: true, day: 12 });
+        recordMatch({ key: "R2:5", won: false, mapId: "river", mapName: "双桥河谷", day: 8, opponents: "电脑 2" });
+        recordMatch({ key: "R3:7", won: true, mapId: "atlas-01", mapName: "雾松平原", day: 15, opponents: "电脑 2" });
+        const records = loadRecords();
+        if (!ok1) fail("record-first");
+        if (dup) fail("record-dedupe");
+        if (records.length !== 3) fail("record-count " + records.length);
+        const stats = statsFor(records);
+        if (stats.total !== 3 || stats.wins !== 2 || stats.winRate !== 67) fail("stats " + JSON.stringify(stats));
+        if (stats.favoriteMap !== "雾松平原" || stats.streak !== 1 || stats.bestDay !== 15)
+          fail("stats-extra " + JSON.stringify(stats));
+        // 正向对照：再赢一局，连胜必须从 1 变 2（证明 streak 是算出来的而不是常量）
+        recordMatch({ key: "R4:9", won: true, mapId: "atlas-01", mapName: "雾松平原", day: 9 });
+        const streak2 = statsFor(loadRecords()).streak;
+        if (streak2 !== 2) fail("streak-not-recomputed " + streak2);
+        log("records=3 stats=" + stats.wins + "胜" + stats.loses + "负 " + stats.winRate + "% streak=" + stats.streak + "→" + streak2 + "（加一胜后）");
+
+        clearRecords();
+        log("PASS");
+      } catch (error) {
+        log("ERR " + error.message);
+      }
+    </script>
+  </body>
+</html>

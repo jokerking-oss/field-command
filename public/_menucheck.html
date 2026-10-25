@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#141e22" />
+    <meta
+      name="description"
+      content="前线指令：原创像素回合制战棋。单人演习，或与朋友在局域网展开2–4人对战。"
+    />
+    <title>前线指令 · FIELD COMMAND</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23141e22'/%3E%3Cpath d='M12 18h40v10H22v8h24v10H22v8H12z' fill='%23f27c56'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/style.css" />
+    <!-- 高级战争界面语言层：必须在 style.css 之后。删掉这一行即回退。 -->
+    <link rel="stylesheet" href="/aw-ui.css" />
+    <!-- 点阵字体 + HUD 浮层化层：必须在 aw-ui.css 之后。删掉这一行即回退。 -->
+    <link rel="stylesheet" href="/aw-hud.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <button class="brand" id="home-button" aria-label="返回作战大厅">
+          <span class="brand-mark"><i></i><i></i><i></i></span
+          ><span>前线指令<small>FIELD COMMAND</small></span>
+        </button>
+        <div class="top-context" id="top-context">
+          <span class="nav-label">作战大厅</span
+          ><span class="version-label">TACTICAL SYSTEM / 01</span>
+        </div>
+        <div class="top-actions">
+          <span class="network-status" id="network-status"><i></i>连接中</span
+          ><button
+            class="icon-button"
+            id="sound-button"
+            title="开启音效"
+            aria-label="开启音效"
+          >
+            ♪<span class="sound-slash">/</span></button
+          ><button class="help-button" id="help-button">
+            战地手册 <span>↗</span>
+          </button>
+        </div>
+      </header>
+      <main id="landing" class="screen landing">
+        <section class="landing-copy">
+          <div class="eyebrow">
+            <span class="small-cross">✦</span> TURN-BASED TACTICS · 局域网战棋
+          </div>
+          <h1>小小战场。<br /><span>步步为营。</span></h1>
+          <p class="intro">
+            抢占城市，调动部队，把握反击时机。<br />从第一名步兵开始，打出你的战术。
+          </p>
+          <div class="landing-actions">
+            <button id="create-room" class="button primary large">
+              <span class="button-icon">⚑</span
+              ><span>建立作战<small>选地图 · 选指挥官 · 即刻出发</small></span
+              ><b>→</b>
+            </button>
+            <button id="join-room" class="button secondary">
+              ↗ 加入房间
+            </button>
+            <button id="resume-game" class="resume-button hidden">
+              ↻ 继续上次作战 <span>→</span>
+            </button>
+          </div>
+          <div class="feature-stats">
+            <div><strong>25</strong><span>陆海空兵种</span></div>
+            <div><strong>47</strong><span>战术地图</span></div>
+            <div><strong>2–4</strong><span>局域网玩家</span></div>
+          </div>
+          <div class="landing-note">
+            <span class="tiny-dot"></span> 同一网络，一起开战。支持混战、组队与
+            AI 补位。
+          </div>
+        </section>
+        <section class="hero-panel" aria-label="战场预览">
+          <div class="panel-heading">
+            <div>
+              <span class="orange-tag">LIVE FIELD</span
+              ><span class="hero-map-name" id="hero-map-name">河谷争夺战</span>
+            </div>
+            <span class="coordinates">SECTOR 07 / 32° N</span>
+          </div>
+          <div class="hero-canvas-wrap">
+            <canvas id="hero-canvas" aria-label="循环战争影像"></canvas>
+            <div class="hero-cinematic" aria-hidden="true">
+              <div id="hero-flash"></div>
+              <div id="hero-smoke"></div>
+              <div class="hero-scan"></div>
+            </div>
+            <div class="hero-map-corner top-left"></div>
+            <div class="hero-map-corner bottom-right"></div>
+          </div>
+          <div class="hero-bottom">
+            <div class="hero-unit">
+              <span class="mini-tank" aria-hidden="true">▰</span>
+              <div>
+                <strong id="hero-detail-title">侦察战场，规划下一步</strong
+                ><span id="hero-detail-text">点击地图，查看兵种与地形</span>
+              </div>
+            </div>
+            <div class="hero-badge">
+              <span class="tiny-dot"></span> TACTICAL VIEW
+            </div>
+          </div>
+          <div class="field-caption">
+            <span>01 / 战术始于观察</span><span>地形 · 火力 · 资源</span>
+          </div>
+        </section>
+        <div class="landing-bottom">
+          <span>一张地图，无数种赢法。</span
+          ><span>原创像素战棋 / 受经典掌机战棋启发</span
+          ><span>LOCAL FIRST. PLAY TOGETHER.</span>
+        </div>
+      </main>
+
+      <main id="lobby" class="screen lobby hidden">
+        <div class="section-title">
+          <div>
+            <div class="eyebrow">MISSION BRIEFING / 战前部署</div>
+            <h1>集结你的部队<span>.</span></h1>
+            <p>邀请同一局域网中的朋友，或让电脑加入战场。</p>
+          </div>
+          <button id="lobby-back" class="button subtle">← 返回大厅</button>
+        </div>
+        <div class="lobby-grid">
+          <section class="lobby-main panel">
+            <div class="panel-heading">
+              <h2>作战席位</h2>
+              <span id="lobby-count"></span>
+            </div>
+            <div id="seat-list"></div>
+            <div class="lobby-commander">
+              <label for="my-commander">我的指挥官</label
+              ><select id="my-commander"></select>
+              <p id="commander-description"></p>
+            </div>
+          </section>
+          <aside class="lobby-settings panel">
+            <div class="panel-heading">
+              <h2>任务设置</h2>
+              <span class="orange-tag" id="room-id"></span>
+            </div>
+            <div class="settings-content">
+              <label>作战地图</label>
+              <div id="map-options" class="map-options"></div>
+              <label for="room-mode">对战规则</label
+              ><select id="room-mode">
+                <option value="ffa">自由混战 · 各自为战</option>
+                <option value="teams">2v2 · 联合行动</option>
+              </select>
+              <p class="muted" id="mode-description"></p>
+              <div class="invite-box">
+                <label>邀请朋友加入</label>
+                <div class="copy-row">
+                  <input
+                    id="invite-url"
+                    readonly
+                    aria-label="局域网邀请地址"
+                  /><button id="copy-invite" class="button small">复制</button>
+                </div>
+                <p>分享此地址，或让朋友输入上方房间码。房主服务需保持运行。</p>
+              </div>
+              <button id="start-game" class="button primary large">
+                全员就位 · 开始作战 <b>→</b>
+              </button>
+              <p class="lobby-footnote" id="start-hint">
+                空闲的电脑席位可由新玩家加入。
+              </p>
+            </div>
+          </aside>
+        </div>
+      </main>
+
+      <main id="battle" class="screen battle hidden">
+        <div class="battle-header">
+          <div class="mission-title">
+            <span class="eyebrow">OPERATION / 正在作战</span>
+            <h1 id="battle-map-title">河谷争夺战</h1>
+          </div>
+          <div class="battle-turn">
+            <span>DAY</span><strong id="day-number">01</strong>
+            <div>
+              <span id="active-player">红方回合</span
+              ><small id="turn-status">等待指令</small>
+            </div>
+          </div>
+          <div class="battle-tools">
+            <button id="save-game" class="button subtle">↓ 保存对局</button
+            ><button id="battle-invite" class="button subtle">
+              ↗ 房间信息
+            </button>
+          </div>
+        </div>
+        <div class="battle-layout">
+          <section class="battlefield-panel">
+            <div id="battle-canvas-wrap" class="battle-canvas-wrap">
+              <!-- F3：垫在战场后面的"无限延伸"层。
+                   地图之外不再是黑边，而是放大模糊后的地形，黑边感消失。
+                   由 renderer.mjs 绘制；不参与交互（pointer-events:none）。 -->
+              <canvas id="map-fill" class="map-fill" aria-hidden="true"></canvas>
+              <canvas
+                id="battle-canvas"
+                tabindex="0"
+                aria-label="战术地图：点击己方单位选择，点击高亮格移动"
+              ></canvas>
+              <div id="combat-stage" class="combat-stage" hidden aria-live="polite">
+                <div class="combat-stage-head"><span>交战 / ENGAGEMENT</span><button id="skip-combat" type="button" aria-label="跳过战斗动画">跳过 ›</button></div>
+                <canvas id="combat-scene" width="640" height="300" aria-label="交战双方及其所在战场"></canvas>
+                <div id="combat-caption" class="combat-caption"></div>
+              </div>
+              <div id="turn-banner" class="turn-banner hidden"></div>
+            </div>
+            <div class="map-legend">
+              <span><i class="legend-square move"></i>移动范围</span
+              ><span><i class="legend-square attack"></i>可攻击目标</span
+              ><span><i class="legend-square spent"></i>已行动</span
+              ><span class="legend-tip">Esc 取消 · Space 结束回合</span>
+            </div>
+            <div id="player-strip" class="player-strip"></div>
+            <!-- F5：底部说明栏。高级战争界面里这是常驻的一条（实测色 rgb(107,121,148)），
+                 用来实时解释当前高亮项。原来这段说明文字是挤在右侧栏里的段落，
+                 既占版面又像网页正文——现在收成一行，跟着光标走。 -->
+            <div id="command-bar" class="command-bar">
+              <!-- F5：原来的「战场工具条」是一块浮在地图左上的小面板。
+                   现在收进这条说明栏——高级战争没有一个浮在地图上的状态框，
+                   所有「解释性文字」都在底部这一条里。
+                   ⚠️ #field-status / #field-hover 这两个 id 是 app.mjs 在写的，
+                      搬位置可以，改名不行。 -->
+              <span id="field-status" class="command-bar-status"
+                ><i class="tiny-dot"></i> 等待指令</span
+              >
+              <span class="command-bar-key" aria-hidden="true">▸</span>
+              <span id="command-bar-text">选择一支部队</span>
+              <span id="field-hover" class="command-bar-hover"
+                >选择单位以查看行动范围</span
+              >
+              <span class="command-bar-hint">Esc 取消 · Space 结束回合</span>
+            </div>
+          </section>
+          <aside class="command-sidebar">
+            <section class="commander-panel panel">
+              <div class="commander-top">
+                <div class="commander-avatar" id="commander-avatar">V</div>
+                <div>
+                  <span class="eyebrow">COMMANDING OFFICER</span>
+                  <h2 id="co-name">先锋</h2>
+                  <span id="my-faction"></span>
+                </div>
+                <div class="funds">
+                  <small>可用资金</small><strong id="funds">0</strong>
+                </div>
+              </div>
+              <div class="power-label">
+                <span>指挥能量</span><span id="energy-value">0 / 100</span>
+              </div>
+              <div class="energy-track"><i id="energy-fill"></i><b></b></div>
+              <div class="power-actions">
+                <button id="power-button" class="power-button">
+                  普通能力 <span>50</span></button
+                ><button id="super-button" class="power-button">
+                  超级能力 <span>100</span>
+                </button>
+              </div>
+            </section>
+            <section
+              id="selection-panel"
+              class="selection-panel panel"
+            ></section>
+            <div class="end-turn-area">
+              <button id="end-turn" class="button primary large">
+                结束我的回合 <b>→</b></button
+              ><span id="save-status">行动自动保存 · 支持刷新重连</span>
+            </div>
+            <section class="log-panel panel">
+              <div class="panel-heading">
+                <h2>战况电台</h2>
+                <span class="radio-icon">◉ LIVE</span>
+              </div>
+              <ol id="event-log"></ol>
+            </section>
+          </aside>
+          <!-- F5：命令菜单的落点。
+               为什么不直接放在 #selection-panel 里？因为 `.command-sidebar .panel`
+               带 backdrop-filter，而 backdrop-filter 会为 fixed 定位的后代
+               **建立包含块**——菜单的 left/top 就变成相对面板计算，
+               而不是视口，菜单会跑到屏幕外（第一版就踩了这个坑）。
+               放到这里，祖先没有任何 transform/filter，坐标才是真·视口坐标。 -->
+          <div id="command-menu-host" class="command-menu-host"></div>
+          <!-- F5：指挥室抽屉开关。高级战争平时屏幕上没有 CO 信息面板——
+               那是「按需打开」的菜单项。所以把指挥官/能量/战况电台收进抽屉，
+               默认全隐藏，保留一个小按钮随时开合。 -->
+          <button
+            id="drawer-toggle"
+            class="drawer-toggle"
+            type="button"
+            aria-pressed="false"
+            title="指挥室：指挥官 · 战况电台（Esc 关闭）"
+          >
+            <span aria-hidden="true">▤</span>
+            <em>指挥室</em>
+          </button>
+        </div>
+      </main>
+      <footer class="app-footer">
+        <span>FC / FIELD COMMAND</span
+        ><span id="footer-message">保持观察，等待你的机会。</span
+        ><span>BUILD 0.1</span>
+      </footer>
+    </div>
+    <div id="toast-container" role="status" aria-live="polite"></div>
+    <dialog id="modal">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow" id="modal-eyebrow">FIELD COMMAND</span>
+          <h2 id="modal-title"></h2>
+        </div>
+        <button id="close-modal" class="icon-button" aria-label="关闭弹窗">
+          ×
+        </button>
+      </div>
+      <div id="modal-body"></div>
+    </dialog>
+    <script type="module" src="/app.mjs"></script>
+  <script type="module">
+// 端到端验证「命令菜单什么时候出现」——走真实 app.mjs + 真实服务器。
+//   ?stage=select → 点一次部队        期望：选中，但**没有**命令菜单
+//   ?stage=move   → 再点同一格确认落点 期望：菜单出现，且贴在终点格右上角
+// 「同一格点两次」是刻意的：第一次=选中（不设落点），第二次=把该格确认为
+// 落点（部队自身所在格一定在 reachable 里）。正好对应要区分的两个状态。
+const stage = new URLSearchParams(location.search).get("stage") || "select";
+const log = (s) => { document.title = s; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const count = () => document.querySelectorAll(".command-list button").length;
+try {
+  // quick-start 已下线：走「建立作战」对话框，显式选回 training 图复现原场景
+  const create = document.getElementById("create-room");
+  if (!create) { log("ERR no-create-room"); throw new Error("no create-room"); }
+  create.click();
+  await sleep(500);
+  const mapSel = document.getElementById("create-map");
+  if (mapSel && [...mapSel.options].some((o) => o.value === "training")) mapSel.value = "training";
+  document.querySelector("#create-form button[type=submit]").click();
+  await sleep(1500);
+  const startBtn = document.getElementById("start-game");
+  if (startBtn && !startBtn.disabled) startBtn.click();
+  await sleep(4500);
+  const c = document.getElementById("battle-canvas");
+  if (!c) { log("ERR no-canvas"); throw new Error("no canvas"); }
+  const r = c.getBoundingClientRect();
+  const ev = (type, x, y) => {
+    const Ctor = type === "click" ? MouseEvent : PointerEvent;
+    c.dispatchEvent(new Ctor(type, { clientX: x, clientY: y, bubbles: true, pointerId: 1, pointerType: "mouse" }));
+  };
+  const x = r.left + r.width * 0.30, y = r.top + r.height * 0.32;
+  ev("pointermove", x, y); await sleep(150);
+  ev("pointerdown", x, y); ev("pointerup", x, y); ev("click", x, y);   // ① 选中
+  await sleep(1600);
+  log("SELECT buttons=" + count());
+  if (stage === "move") {
+    ev("pointerdown", x, y); ev("pointerup", x, y); ev("click", x, y); // ② 确认落点
+    await sleep(1800);
+    const mn = document.querySelector(".command-list");
+    const mb = mn ? mn.getBoundingClientRect() : null;
+    log("MOVE buttons=" + count() +
+        " rect=" + (mb ? [mb.left, mb.top, mb.width, mb.height].map(Math.round).join(",") : "none") +
+        " vw=" + window.innerWidth + " vh=" + window.innerHeight);
+  }
+} catch (e) { log("ERR " + e.message); }
+</script>
+</body>
+</html>

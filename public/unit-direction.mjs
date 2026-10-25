@@ -1,4 +1,5 @@
 import { paintUnitMotion, paintCaptureEffect } from "./unit-motion.mjs";
+import { paintUnitHeading } from "./unit-heading.mjs";
 
 const ink = "#23383b";
 const steel = "#718171";
@@ -165,6 +166,7 @@ function verticalWheeled(ctx, type, palette, direction, step) {
 }
 
 export function paintDirectionalMotion(ctx, type, palette, direction, phase = 0, action = "move") {
+  if (paintUnitHeading(ctx, type, palette, direction, phase, action)) return;
   if (direction === "right" || direction === "left") {
     ctx.save();
     if (direction === "left") {

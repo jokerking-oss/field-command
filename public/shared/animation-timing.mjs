@@ -45,7 +45,9 @@ export function actionAnimationDuration(before, after, action) {
   const travel = movementDuration(path);
   if (action.command === "attack") {
     const survivor = after.units.find((item) => item.id === unit.id);
-    return travel + combatDuration(unit.hp - (survivor?.hp ?? 0));
+    // A drone is consumed by its own strike; that loss is not a counterattack.
+    const counterDamage = unit.type === "drone" ? 0 : unit.hp - (survivor?.hp ?? 0);
+    return travel + combatDuration(counterDamage);
   }
   if (action.command === "capture") {
     const prior = before.tiles.find((tile) => tile.x === action.x && tile.y === action.y);
@@ -53,6 +55,8 @@ export function actionAnimationDuration(before, after, action) {
     return travel + captureDuration(current?.owner === unit.owner && prior?.owner !== unit.owner);
   }
   if (unit.type === "apc" && ["supply", "wait"].includes(action.command))
+    return travel + 1050;
+  if (["submerge", "surface", "repair", "load", "unload"].includes(action.command))
     return travel + 1050;
   return travel;
 }

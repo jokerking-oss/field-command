@@ -1,0 +1,66 @@
+{
+ "infantry": {
+  "model": "Russian infantry rifleman",
+  "author": "42manako",
+  "license": "CC Attribution-NonCommercial",
+  "likes": 207,
+  "uid": "ce3b90ce3e5a4d2e87d2a735e296b82e",
+  "page": "https://sketchfab.com/3d-models/ce3b90ce3e5a4d2e87d2a735e296b82e"
+ },
+ "mech": {
+  "model": "Ukrainian Javelin missile operator",
+  "author": "42manako",
+  "license": "CC Attribution",
+  "likes": 96,
+  "uid": "88d025d3b1f24db48c8cfa25c621a8c1",
+  "page": "https://sketchfab.com/3d-models/88d025d3b1f24db48c8cfa25c621a8c1"
+ },
+ "recon": {
+  "model": "HMMWV Shelter Humvee",
+  "author": "Muhamad Mirza Arrafi",
+  "license": "CC Attribution",
+  "likes": 131,
+  "uid": "bdf3dea0dd254d6280e4ac0d29719115",
+  "page": "https://sketchfab.com/3d-models/bdf3dea0dd254d6280e4ac0d29719115"
+ },
+ "tank": {
+  "model": "Light Tank M24 Chaffee (War Thunder)",
+  "author": "KojfDiscord",
+  "license": "CC Attribution",
+  "likes": 13,
+  "uid": "04c83d06df3f480db74cd40a3e37e251",
+  "page": "https://sketchfab.com/3d-models/04c83d06df3f480db74cd40a3e37e251"
+ },
+ "heavy": {
+  "model": "M1 Abrams",
+  "author": "Artem Goyko",
+  "license": "CC Attribution",
+  "likes": 379,
+  "uid": "2577a4eccbc74b2da6dba5bfd09b7511",
+  "page": "https://sketchfab.com/3d-models/2577a4eccbc74b2da6dba5bfd09b7511"
+ },
+ "artillery": {
+  "model": "M110 Howitzer (Free Raw Scan)",
+  "author": "Renafox",
+  "license": "CC Attribution",
+  "likes": 134,
+  "uid": "e36a37526dfe4f2f815e828b50c26008",
+  "page": "https://sketchfab.com/3d-models/e36a37526dfe4f2f815e828b50c26008"
+ },
+ "rocket": {
+  "model": "PHL-03 03式远程火箭炮系统",
+  "author": "EXcaliburK117",
+  "license": "Free Standard",
+  "likes": 36,
+  "uid": "b90e8fb666884982b95547beb39d77e9",
+  "page": "https://sketchfab.com/3d-models/b90e8fb666884982b95547beb39d77e9"
+ },
+ "apc": {
+  "model": "Ural 4320",
+  "author": "Brout",
+  "license": "CC Attribution",
+  "likes": 581,
+  "uid": "f953c51a5dbc4a15949f4dcc0905c4e8",
+  "page": "https://sketchfab.com/3d-models/f953c51a5dbc4a15949f4dcc0905c4e8"
+ }
+}

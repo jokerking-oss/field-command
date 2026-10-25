@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>geom</title>
+    <!--
+      HUD 几何探针（仅开发诊断用）。
+      做法与 _devlook 相同：同源 fetch 真实 index.html，抽 .topbar + #battle 原样注入，
+      但这里不挂渲染器——只量 CSS 布局。所以它测的是**真实样式表下的真实几何**，
+      而不是我手搓的近似 DOM。
+
+      为什么要量而不是看：截图只能看出"好像有点挤"，
+      量出来才知道是重叠了 8px 还是溢出了 40px，改起来才有依据。
+    -->
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/aw-ui.css" />
+    <link rel="stylesheet" href="/aw-hud.css" />
+    <style>
+      html, body { margin: 0; background: #050d0c; }
+    </style>
+  </head>
+  <body>
+    <div id="host"></div>
+    <script type="module">
+      const log = [];
+      let pass = 0, total = 0;
+      const ok = (name, cond, detail) => {
+        total++;
+        if (cond) pass++;
+        log.push({ name, pass: !!cond, detail: typeof detail === "string" ? detail : JSON.stringify(detail) });
+      };
+      const report = async (unit, extra = {}) => {
+        try {
+          await fetch("http://127.0.0.1:4188/result", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ suite: unit, total, pass, unit, log, ...extra }),
+          });
+        } catch {}
+        document.title = `DONE ${pass}/${total}`;
+      };
+      window.addEventListener("error", (e) => {
+        total = 999; pass = 0;
+        log.push({ name: "脚本崩溃", pass: false, detail: String(e.message) + " | " + e.filename + ":" + e.lineno });
+        report("ERR");
+      });
+
+      const src = await (await fetch("/")).text();
+      const doc = new DOMParser().parseFromString(src, "text/html");
+      const host = document.getElementById("host");
+      host.appendChild(doc.querySelector(".topbar").cloneNode(true));
+      const battle = doc.querySelector("#battle").cloneNode(true);
+      battle.classList.remove("hidden");
+      host.appendChild(battle);
+
+      // 填一份有代表性的内容（含长文案，逼出真实宽度）
+      const $ = (s) => battle.querySelector(s);
+      $("#battle-map-title").textContent = "双桥河谷";
+      $("#day-number").textContent = "03";
+      $("#active-player").textContent = "红方回合";
+      $("#turn-status").textContent = "等待你的指令";
+      $("#funds").textContent = "12,400";
+      $("#energy-value").textContent = "62 / 100";
+      $("#field-status").innerHTML = '<i class="tiny-dot"></i> 机甲步兵 · 待命中';
+      $("#field-hover").textContent = "拖拽可规划路线，松手执行";
+      $("#command-bar-text").textContent = "选择指令下达给这支部队。";
+      $("#player-strip").innerHTML = [
+        { id: 0, n: "红方", u: 6, c: 3, on: true },
+        { id: 1, n: "蓝方", u: 7, c: 2, on: false },
+      ]
+        .map(
+          (p) =>
+            `<div class="player-card ${p.on ? "active" : ""}" style="--player-color:${
+              p.id === 0 ? "#ef745e" : "#64b7e8"
+            }"><div class="player-name"><i></i>${p.n}${p.id === 0 ? " · 你" : ""}</div><small>${p.u} 部队 · ${p.c} 据点</small></div>`,
+        )
+        .join("");
+      $("#selection-panel").innerHTML =
+        `<div class="selection-top"><div><span class="eyebrow">红方 / UNIT u14</span><h2>机甲步兵</h2></div><span class="hp-badge">10<small>兵力 / 10</small></span></div>` +
+        `<div class="selection-content">` +
+        `<div class="unit-stats"><div><span>移动 / 射程</span><strong>6 / 1–1</strong></div><div><span>弹药 / 燃料</span><strong>∞ / 70</strong></div><div><span>地形防御</span><strong>2 ★</strong></div></div>` +
+        `<div class="combat-preview"><span>步兵<strong>−7 HP</strong></span><span>预计反击<strong>−3 HP</strong></span></div>` +
+        `<p>按住部队拖出红色箭头选路线，或点击青色格预选移动。</p>` +
+        `<div class="command-list"><button class="attack-command" data-command="attack">确认攻击</button><button data-command="wait">移动并待机</button><button data-command="cancel">取消预选</button></div>` +
+        `</div>`;
+      // 复刻 app.mjs 的搬家逻辑
+      const mhost = $("#command-menu-host");
+      const menu = $("#selection-panel .command-list");
+      if (mhost && menu) { mhost.replaceChildren(); mhost.appendChild(menu); }
+
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      await document.fonts.ready;
+
+      const R = (sel) => {
+        const el = typeof sel === "string" ? document.querySelector(sel) : sel;
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height),
+                 top: Math.round(b.top), bottom: Math.round(b.bottom), left: Math.round(b.left), right: Math.round(b.right) };
+      };
+      const overlap = (a, b) => {
+        if (!a || !b) return 0;
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        return w > 0 && h > 0 ? Math.round(w * h) : 0;
+      };
+      const VW = window.innerWidth, VH = window.innerHeight;
+
+      // —— 1. 字体 ——
+      const fontLoaded = document.fonts.check('12px "ArkPixel"');
+      const bodyFont = getComputedStyle(document.body).fontFamily;
+      const fbSize = getComputedStyle($("#selection-panel h2") || document.body).fontSize;
+      ok("① 点阵字体已加载", fontLoaded, `document.fonts.check(12px ArkPixel)=${fontLoaded}`);
+      ok("② body 字体族含 ArkPixel", /ArkPixel/.test(bodyFont), bodyFont.slice(0, 60));
+      ok("③ 面板字号落在 12px 网格上", /^(12|24|48)px$/.test(fbSize), `h2 font-size=${fbSize}`);
+
+      // —— 2. 顶栏与战况带 ——
+      const topbar = R(".topbar"), header = R(".battle-header");
+      ok("④ 顶栏与战况带不重叠", overlap(topbar, header) === 0,
+        `topbar=${topbar?.top}~${topbar?.bottom} header=${header?.top}~${header?.bottom} 重叠=${overlap(topbar, header)}`);
+
+      // —— 3. 顶栏并成一条带；工具条已并入说明栏 ——
+      ok("⑤ 战况带压到一条 34px", header && header.h <= 40,
+        `header h=${header?.h} (${header?.top}~${header?.bottom})`);
+      ok("⑤2 工具条已从战场移除（收进说明栏）",
+        document.querySelector(".battlefield-toolbar") === null &&
+        $("#field-status") !== null && $("#command-bar").contains($("#field-status")),
+        `战场上有工具条=${document.querySelector(".battlefield-toolbar") !== null} ` +
+        `field-status 在说明栏内=${$("#command-bar").contains($("#field-status"))}`);
+
+      // —— 4. 底部四件套互不重叠 ——
+      const cbar = R("#command-bar"), sel = R("#selection-panel"), strip = R("#player-strip"), legend = R(".map-legend");
+      ok("⑥ 说明栏贴底且满宽", cbar && cbar.bottom >= VH - 1 && cbar.w >= VW - 1, `bar=${JSON.stringify(cbar)} VH=${VH}`);
+      ok("⑦ 单位条不压说明栏", overlap(sel, cbar) === 0, `sel.bottom=${sel?.bottom} bar.top=${cbar?.top}`);
+      ok("⑧ 单位条与玩家条不重叠", overlap(sel, strip) === 0,
+        `sel.right=${sel?.right} strip.left=${strip?.left} 重叠=${overlap(sel, strip)}`);
+      ok("⑨ 图例在说明栏内、不与玩家条重叠", overlap(legend, strip) === 0 && overlap(legend, cbar) > 0,
+        `legend=${JSON.stringify(legend)} strip=${JSON.stringify(strip)}`);
+
+      // —— 5. 单位条不能被内容撑破 ——
+      const selEl = $("#selection-panel");
+      ok("⑩ 单位条无横向溢出", selEl.scrollWidth <= selEl.clientWidth + 1,
+        `scrollW=${selEl.scrollWidth} clientW=${selEl.clientWidth}`);
+
+      // 把撑高的元凶找出来，而不是继续猜
+      const kids = [];
+      const walk = (el, depth) => {
+        if (depth > 3) return;
+        for (const c of el.children) {
+          if (c.matches(".command-list")) continue; // 已 fixed 脱流
+          const h = Math.round(c.getBoundingClientRect().height);
+          kids.push({ sel: (c.id ? "#" + c.id : "") + "." + (c.className || "").toString().split(" ").join("."), h, depth });
+          walk(c, depth + 1);
+        }
+      };
+      walk(selEl, 0);
+      const cs = getComputedStyle(selEl);
+      ok("⑪ 单位条高度单行（≤56px）", selEl.getBoundingClientRect().height <= 56,
+        `h=${Math.round(selEl.getBoundingClientRect().height)} ` +
+        `minH=${cs.minHeight} pad=${cs.paddingTop}/${cs.paddingBottom} ` +
+        `hp=${getComputedStyle($(".hp-badge")).fontSize} ` +
+        `子元素=${JSON.stringify(kids)}`);
+
+      // —— 6. 结束回合按钮 ——
+      const endturn = R(".end-turn-area");
+      ok("⑫ 结束回合不与战况带重叠", overlap(endturn, header) === 0,
+        `endturn.top=${endturn?.top} header.bottom=${header?.bottom}`);
+
+      // —— 7. 命令菜单必须在视口内 ——
+      const menuEl = $(".command-list");
+      const menuBox = menuEl ? menuEl.getBoundingClientRect() : null;
+      ok("⑬ 命令菜单已挂到面板外", menuEl && menuEl.closest("#command-menu-host") !== null,
+        menuEl ? ("父=" + (menuEl.parentElement?.id || menuEl.parentElement?.className)) : "无菜单");
+      ok("⑭ 命令菜单在视口内", menuBox && menuBox.width > 60 && menuBox.height > 30 &&
+          menuBox.left >= 0 && menuBox.top >= 0 && menuBox.right <= VW && menuBox.bottom <= VH,
+        menuBox ? `menu=${Math.round(menuBox.left)},${Math.round(menuBox.top)} ${Math.round(menuBox.width)}x${Math.round(menuBox.height)} vp=${VW}x${VH}` : "null");
+
+      // —— 8. 单位条不能再带 backdrop-filter ——
+      ok("⑮ 单位条已无 backdrop-filter（否则会劫持 fixed 坐标）",
+        getComputedStyle(selEl).backdropFilter === "none",
+        `backdropFilter=${getComputedStyle(selEl).backdropFilter}`);
+
+      // —— 9. 抽屉默认关闭 ——
+      const room = document.querySelector(".command-sidebar");
+      ok("⑯ 指挥室默认隐藏", !room.classList.contains("room-open") &&
+          getComputedStyle($(".commander-panel")).display === "none",
+        `commander display=${getComputedStyle($(".commander-panel")).display}`);
+      const drawer = R("#drawer-toggle");
+      ok("⑰ 抽屉开关在右边缘且完整", drawer && drawer.right <= VW && drawer.right >= VW - 2 && drawer.w <= 40,
+        JSON.stringify(drawer));
+
+      // —— 10. 地图仍铺满 ——
+      const cv = R("#battle-canvas");
+      ok("⑪2 画布仍铺满视口高度", cv && cv.h >= VH * 0.98, `canvas h=${cv?.h} VH=${VH}`);
+
+      // —— 11. 说明栏内部不溢出（现在装了 5 组信息） ——
+      const barEl = $("#command-bar");
+      ok("⑱ 说明栏内容不溢出", barEl.scrollWidth <= barEl.clientWidth + 1,
+        `scrollW=${barEl.scrollWidth} clientW=${barEl.clientWidth} ` +
+        `子项宽=${JSON.stringify([...barEl.children].map((c) => ({
+          n: c.id || c.className.split(" ")[0],
+          w: Math.round(c.getBoundingClientRect().width),
+          vis: getComputedStyle(c).display !== "none",
+        })))}`);
+
+      // —— 12. z 序：用 elementFromPoint 验"谁在最上面"，而不是靠肉眼看截图 ——
+      // 这里踩过一个真坑：F3 把 .battle-layout 设成 position:fixed; inset:0，
+      // 地图因此把顶栏（品牌/大厅/音效/帮助）整条盖住，实测 0~48px 全是地图。
+      const at = (x, y) => document.elementFromPoint(x, y);
+      const hitTop = at(60, 24), hitHeader = at(60, 64), hitMap = at(700, 400);
+      ok("⑲ 顶栏浮在地图之上（app 导航可见）",
+        hitTop && hitTop.closest(".topbar") !== null,
+        `elementFromPoint(60,24)=${hitTop ? hitTop.tagName + "." + String(hitTop.className) : "null"}`);
+      ok("⑳ 战况带浮在地图之上", hitHeader && hitHeader.closest(".battle-header") !== null,
+        `elementFromPoint(60,64)=${hitHeader ? hitHeader.tagName + "." + String(hitHeader.className) : "null"}`);
+      ok("㉑ 地图中部仍可点击到画布",
+        hitMap && (hitMap.id === "battle-canvas" || hitMap.id === "map-fill"),
+        `elementFromPoint(700,400)=${hitMap ? hitMap.tagName + "#" + hitMap.id : "null"}`);
+
+      await report("geomHud", { vw: VW, vh: VH });
+    </script>
+  </body>
+</html>

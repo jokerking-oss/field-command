@@ -23,6 +23,20 @@ const WEAPONS = {
   heavy: { kind: "heavy", x: 38, y: 15, recoil: 6 },
   artillery: { kind: "arc", x: 35, y: 7, recoil: 5 },
   rocket: { kind: "salvo", x: 25, y: 10, recoil: 3 },
+  aa: { kind: "burst", x: 37, y: 16, recoil: 2 },
+  sam: { kind: "missile", x: 34, y: 10, recoil: 2 },
+  assault: { kind: "shell", x: 39, y: 9, recoil: 4 },
+  siege: { kind: "heavy", x: 39, y: 19, recoil: 6 },
+  rail: { kind: "rail", x: 39, y: 8, recoil: 3 },
+  interceptor: { kind: "missile", x: 31, y: 16, recoil: 1 },
+  bomber: { kind: "bomb", x: 29, y: 28, recoil: 1 },
+  attack_heli: { kind: "rocket", x: 29, y: 28, recoil: 2 },
+  stealth: { kind: "missile", x: 39, y: 20, recoil: 1 },
+  drone: { kind: "blast", x: 25, y: 30, recoil: 0 },
+  battleship: { kind: "heavy", x: 39, y: 12, recoil: 5 },
+  cruiser: { kind: "missile", x: 35, y: 14, recoil: 2 },
+  submarine: { kind: "torpedo", x: 39, y: 23, recoil: 1 },
+  carrier: { kind: "plane", x: 37, y: 18, recoil: 0 },
 };
 
 function box(ctx, x, y, w, h, color) {
@@ -125,6 +139,38 @@ function headquarters(ctx, ox, owner) {
 }
 function buildingZone(ctx, ox, owner, type) {
   if (type === "hq") return headquarters(ctx, ox, owner);
+  if (type === "port") {
+    box(ctx, ox, 30, 320, 99, "#a0b9b4");
+    box(ctx, ox, 129, 320, 143, "#5b929f");
+    for (let x = ox + 15; x < ox + 320; x += 66) {
+      box(ctx, x, 156 + x % 15, 29, 2, "#91c3c1");
+      box(ctx, x + 13, 237 - x % 10, 22, 2, "#a3d1c9");
+    }
+    box(ctx, ox + 24, 165, 252, 13, "#485d59");
+    box(ctx, ox + 26, 153, 249, 12, "#c9b99a");
+    for (let x = ox + 43; x < ox + 272; x += 43) box(ctx, x, 172, 9, 77, "#53625b");
+    box(ctx, ox + 45, 106, 76, 50, "#aebca6");
+    box(ctx, ox + 42, 99, 83, 10, palette(owner)[2]);
+    box(ctx, ox + 59, 120, 45, 19, "#557071");
+    box(ctx, ox + 191, 63, 5, 91, "#455a56");
+    box(ctx, ox + 191, 63, 64, 5, palette(owner)[1]);
+    box(ctx, ox + 249, 68, 5, 43, "#455a56");
+    box(ctx, ox + 232, 109, 37, 9, "#e2d2a5");
+    return;
+  }
+  if (type === "airport") {
+    box(ctx, ox, 30, 320, 242, "#859b86");
+    box(ctx, ox + 72, 78, 194, 194, "#485d60");
+    box(ctx, ox + 79, 79, 178, 193, "#77807a");
+    for (let y = 90; y < 268; y += 35) box(ctx, ox + 166, y, 5, 17, "#e3d7aa");
+    for (const x of [ox + 7, ox + 272]) {
+      box(ctx, x, 120, 42, 91, "#586f6c");
+      box(ctx, x + 4, 124, 34, 81, "#b7baa3");
+      box(ctx, x - 2, 111, 46, 15, palette(owner)[2]);
+      box(ctx, x + 7, 150, 25, 31, "#4b6666");
+    }
+    return;
+  }
   box(ctx, ox, 30, 320, 139, "#9eb195");
   box(ctx, ox, 160, 320, 19, "#b8b49a");
   box(ctx, ox, 175, 320, 4, "#ded4b0");
@@ -149,6 +195,26 @@ function buildingZone(ctx, ox, owner, type) {
   }
 }
 function landscapeZone(ctx, ox, type) {
+  if (["water", "sea", "shoal"].includes(type)) {
+    box(ctx, ox, 30, 320, 242, "#5e929e");
+    box(ctx, ox, 30, 320, 91, "#a3c5bd");
+    box(ctx, ox, 117, 320, 4, "#d5dfc1");
+    for (let y = 135; y < 269; y += 27)
+      for (let x = ox + 12 + y % 29; x < ox + 320; x += 65)
+        box(ctx, x, y, 27, 2, type === "shoal" ? "#a5d4c4" : "#8bc3c4");
+    if (type === "shoal") {
+      box(ctx, ox + 4, 244, 150, 28, "#afbfa3");
+      box(ctx, ox + 12, 239, 92, 5, "#d1d4ad");
+    }
+    return;
+  }
+  if (type === "coast") {
+    box(ctx, ox, 30, 320, 170, "#8eb8ae");
+    box(ctx, ox, 172, 320, 100, "#c5ba93");
+    box(ctx, ox, 167, 320, 8, "#e9dfb4");
+    for (let x = ox + 12; x < ox + 320; x += 49) box(ctx, x, 133 + x % 13, 28, 2, "#dce6cc");
+    return;
+  }
   box(ctx, ox, 30, 320, 242, "#7e9e72");
   box(ctx, ox, 30, 320, 64, "#a6bc9a");
   box(ctx, ox, 93, 320, 59, "#7c9c72");
@@ -213,7 +279,7 @@ function ground(ctx, sides) {
     ctx.beginPath();
     ctx.rect(ox, 30, 320, 244);
     ctx.clip();
-    if (["city", "factory", "hq"].includes(terrain)) buildingZone(ctx, ox, unit.owner, terrain);
+    if (["city", "factory", "hq", "port", "airport"].includes(terrain)) buildingZone(ctx, ox, unit.owner, terrain);
     else landscapeZone(ctx, ox, terrain);
     ctx.restore();
   });
@@ -253,7 +319,7 @@ function unitSprite(ctx, unit, side, time, hitAt, fireAt) {
     ctx.scale(-1, 1);
   }
   if (struck && Math.floor(time / 60) % 2 === 0) ctx.filter = "brightness(1.8) saturate(.45)";
-  paintUnitMotion(ctx, unit.type, palette(unit.owner), { action: "idle", phase: 0 });
+  paintUnitMotion(ctx, unit.type, palette(unit.owner), { action: "idle", phase: (time % 640) / 640 });
   ctx.restore();
 }
 function spark(ctx, x, y, size) {
@@ -265,9 +331,30 @@ function projectile(ctx, kind, x, y, direction, number = 0) {
   if (kind === "burst") {
     box(ctx, x - direction * 14, y, 11, 2, "#ffe5a0");
     box(ctx, x, y, 5, 2, "#fff9d5");
-  } else if (kind === "rocket" || kind === "salvo") {
+  } else if (kind === "rail") {
+    box(ctx, x - direction * 28, y - 3, 30, 1, "#74c9cb");
+    box(ctx, x - direction * 24, y - 1, 26, 3, "#b8f2df");
+    box(ctx, x - direction * 10, y, 13, 1, "#f1fff1");
+    box(ctx, x, y - 3, 5, 7, "#dbfff1");
+  } else if (kind === "torpedo") {
+    for (let i = 1; i <= 4; i++) box(ctx, x - direction * (i * 8), y - i % 2 * 4, 3, 3, "#91ced0");
+    box(ctx, x - direction * 9, y, 9, 4, "#d5dfcb");
+    box(ctx, x, y - 1, 6, 6, "#3a5b5f");
+  } else if (kind === "plane") {
+    box(ctx, x - direction * 14, y + 1, 12, 2, "#d6e4ca");
+    box(ctx, x - 2, y - 5, 10, 11, "#e3e8d4");
+    box(ctx, x + direction * 5, y - 2, 7, 5, "#274b50");
+  } else if (kind === "blast") {
+    box(ctx, x - 8, y - 4, 16, 8, "#324c4b");
+    box(ctx, x - 5, y - 3, 10, 6, "#eaa66a");
+    for (const offset of [-8, 8]) box(ctx, x + offset, y - 9, 3, 18, "#cbdac5");
+  } else if (kind === "bomb") {
+    box(ctx, x - 8, y - 7, 4, 3, "#e4dcc2");
+    box(ctx, x - 4, y - 4, 7, 8, "#3d5352");
+    box(ctx, x + 3, y - 2, 3, 4, "#f2d38c");
+  } else if (["rocket", "salvo", "missile"].includes(kind)) {
     box(ctx, x - direction * 12, y + 1, 12, 3, "#e5a373");
-    box(ctx, x - direction * 6, y, 11, 5, "#d9e0c4");
+    box(ctx, x - direction * 6, y, 11, 5, kind === "missile" ? "#b8d8cf" : "#d9e0c4");
     box(ctx, x + direction * 3, y + 1, 4, 3, "#263e3c");
     if (number % 2 === 0) box(ctx, x - direction * 17, y, 4, 5, "#fff0ac");
   } else {
@@ -283,17 +370,19 @@ function weaponFire(ctx, unit, side, time, fireAt, hitAt) {
   const to = { x: side === 0 ? 458 : 190, y: 211 };
   const direction = side === 0 ? 1 : -1;
   const age = time - fireAt;
-  const burst = weapon.kind === "burst" || weapon.kind === "salvo";
-  const count = burst ? 3 : 1;
+  const count = ({ burst: 3, salvo: 3, missile: 2, bomb: 3, plane: 2 })[weapon.kind] || 1;
+  const burst = count > 1;
   for (let i = 0; i < count; i++) {
-    const launch = i * (weapon.kind === "salvo" ? 62 : 75);
+    const launch = i * (["salvo", "missile", "bomb", "plane"].includes(weapon.kind) ? 62 : 75);
     const shotAge = age - launch;
     if (shotAge >= 0 && shotAge < 85) spark(ctx, from.x, from.y + (i - 1) * 3, burst ? 4 : weapon.kind === "heavy" ? 10 : 7);
     const p = (shotAge - 40) / (hitAt - fireAt - launch - 40);
     if (p < 0 || p >= 1) continue;
     const eased = ease(clamp(p));
     const x = from.x + (to.x - from.x) * eased;
-    const arc = weapon.kind === "arc" ? 86 : weapon.kind === "rocket" || weapon.kind === "salvo" ? 25 : 0;
+    const arc = weapon.kind === "arc" ? 86
+      : ["rocket", "salvo", "missile", "plane"].includes(weapon.kind) ? 25
+        : weapon.kind === "bomb" ? 45 : 0;
     const y = from.y + (to.y - from.y) * eased - Math.sin(Math.PI * eased) * arc + (i - 1) * 5;
     projectile(ctx, weapon.kind, x, y, direction, i);
   }
@@ -301,7 +390,7 @@ function weaponFire(ctx, unit, side, time, fireAt, hitAt) {
 function impact(ctx, x, y, age, kind) {
   if (age < 0 || age > 470) return;
   const p = age / 470;
-  const power = ["heavy", "arc", "salvo"].includes(kind) ? 1.45 : ["burst"].includes(kind) ? .7 : 1;
+  const power = ["heavy", "arc", "salvo", "bomb", "blast"].includes(kind) ? 1.45 : ["burst"].includes(kind) ? .7 : 1;
   if (age < 145) {
     const r = Math.round((3 + age / 17) * power);
     box(ctx, x - r, y - 2, r * 2, 4, "#ffe6a0");
@@ -354,7 +443,9 @@ export function paintCombatScene(ctx, battle) {
   ctx.clearRect(0, 0, WIDTH, HEIGHT);
   ctx.imageSmoothingEnabled = false;
   ground(ctx, sides);
-  unitSprite(ctx, attacker, 0, time, COMBAT_TIMING.counterHit, COMBAT_TIMING.firstFire);
+  unitSprite(ctx, attacker, 0, time,
+    attacker.type === "drone" && attacker.hpAfter === 0 ? COMBAT_TIMING.firstHit : COMBAT_TIMING.counterHit,
+    COMBAT_TIMING.firstFire);
   unitSprite(ctx, defender, 1, time, COMBAT_TIMING.firstHit, counter > 0 ? COMBAT_TIMING.counterFire : Infinity);
   weaponFire(ctx, attacker, 0, time, COMBAT_TIMING.firstFire, COMBAT_TIMING.firstHit);
   if (counter > 0) weaponFire(ctx, defender, 1, time, COMBAT_TIMING.counterFire, COMBAT_TIMING.counterHit);
@@ -362,13 +453,14 @@ export function paintCombatScene(ctx, battle) {
   if (counter > 0) impact(ctx, 190, 211, time - COMBAT_TIMING.counterHit, WEAPONS[defender.type]?.kind);
   if (defender.hpAfter === 0 && deathEffectKind(defender.type) === "blast")
     paintVehicleBlast(ctx, time - COMBAT_TIMING.firstHit, 458, 211);
-  if (attacker.hpAfter === 0 && counter > 0 && deathEffectKind(attacker.type) === "blast")
-    paintVehicleBlast(ctx, time - COMBAT_TIMING.counterHit, 190, 211);
+  if (attacker.hpAfter === 0 && deathEffectKind(attacker.type) === "blast")
+    paintVehicleBlast(ctx, time - (attacker.type === "drone" ? COMBAT_TIMING.firstHit : COMBAT_TIMING.counterHit), 190, 211);
   if (damage && time >= COMBAT_TIMING.firstHit && time < COMBAT_TIMING.firstHit + 340)
     label(ctx, `−${damage}`, 476, 159 - Math.floor((time - COMBAT_TIMING.firstHit) / 28), "#fff0ad", "center", 16);
   if (counter && time >= COMBAT_TIMING.counterHit && time < COMBAT_TIMING.counterHit + 340)
     label(ctx, `−${counter}`, 177, 159 - Math.floor((time - COMBAT_TIMING.counterHit) / 28), "#fff0ad", "center", 16);
-  const attackerHp = time >= COMBAT_TIMING.counterHit ? attacker.hpAfter : attacker.hp;
+  const attackerHp = time >= (attacker.type === "drone" ? COMBAT_TIMING.firstHit : COMBAT_TIMING.counterHit)
+    ? attacker.hpAfter : attacker.hp;
   const defenderHp = time >= COMBAT_TIMING.firstHit ? defender.hpAfter : defender.hp;
   largeHp(ctx, attackerHp, 287, "right");
   largeHp(ctx, defenderHp, 353, "left");

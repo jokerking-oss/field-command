@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#141e22" />
     <meta
       name="description"
-      content="前线指令：原创像素回合制战棋。单人演习，或与朋友在局域网展开2–4人对战。"
+      content="前线指令：原创像素回合制战棋。建立战局，2–4 人对战，空位由电脑接管。"
     />
     <title>前线指令 · FIELD COMMAND</title>
     <link
@@ -14,6 +14,15 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23141e22'/%3E%3Cpath d='M12 18h40v10H22v8h24v10H22v8H12z' fill='%23f27c56'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="/style.css" />
+    <!-- 高级战争界面语言层：必须在 style.css 之后。删掉这一行即回退。 -->
+    <link rel="stylesheet" href="/aw-ui.css" />
+    <!-- 点阵字体 + HUD 浮层化层：必须在 aw-ui.css 之后。删掉这一行即回退。 -->
+    <link rel="stylesheet" href="/aw-hud.css" />
+    <!-- ★ 真实战争界面层（金属材质 + 冷灰调 + 3D）：必须在 aw-hud.css 之后。
+         它覆盖上面三层的配色与材质。删掉这一行即完全回退到 AW 像素界面。 -->
+    <link rel="stylesheet" href="/hw-ui.css" />
+    <!-- 个人档案与战绩面板：样式全部限定在 .profile-* 内，删掉这一行即回退。 -->
+    <link rel="stylesheet" href="/profile.css" />
   </head>
   <body>
     <div id="app">
@@ -29,6 +38,12 @@
         <div class="top-actions">
           <span class="network-status" id="network-status"><i></i>连接中</span
           ><button
+            class="avatar-button"
+            id="profile-button"
+            title="我的档案与战绩"
+            aria-label="我的档案与战绩"
+          ></button
+          ><button
             class="icon-button"
             id="sound-button"
             title="开启音效"
@@ -43,33 +58,29 @@
       <main id="landing" class="screen landing">
         <section class="landing-copy">
           <div class="eyebrow">
-            <span class="small-cross">✦</span> TURN-BASED TACTICS · 局域网战棋
+            <span class="small-cross">✦</span> TURN-BASED TACTICS · 联机战棋
           </div>
           <h1>小小战场。<br /><span>步步为营。</span></h1>
           <p class="intro">
             抢占城市，调动部队，把握反击时机。<br />从第一名步兵开始，打出你的战术。
           </p>
           <div class="landing-actions">
-            <button id="quick-start" class="button primary large">
+            <button id="create-room" class="button primary large">
               <span class="button-icon">⚑</span
-              ><span>开始单人演习<small>与电脑对战 · 即刻出发</small></span
+              ><span>建立作战<small>选地图 · 选指挥官 · 即刻出发</small></span
               ><b>→</b>
             </button>
-            <div class="action-pair">
-              <button id="create-room" class="button secondary">
-                ＋ 创建联机房间</button
-              ><button id="join-room" class="button secondary">
-                ↗ 加入房间
-              </button>
-            </div>
+            <button id="join-room" class="button secondary">
+              ↗ 加入房间
+            </button>
             <button id="resume-game" class="resume-button hidden">
               ↻ 继续上次作战 <span>→</span>
             </button>
           </div>
           <div class="feature-stats">
-            <div><strong>08</strong><span>陆战兵种</span></div>
-            <div><strong>03</strong><span>战术地图</span></div>
-            <div><strong>2–4</strong><span>局域网玩家</span></div>
+            <div><strong>25</strong><span>陆海空兵种</span></div>
+            <div><strong>47</strong><span>战术地图</span></div>
+            <div><strong>2–4</strong><span>联机玩家</span></div>
           </div>
           <div class="landing-note">
             <span class="tiny-dot"></span> 同一网络，一起开战。支持混战、组队与
@@ -85,7 +96,32 @@
             <span class="coordinates">SECTOR 07 / 32° N</span>
           </div>
           <div class="hero-canvas-wrap">
-            <canvas id="hero-canvas" aria-label="原创像素战场预览"></canvas>
+            <canvas id="hero-canvas" aria-label="循环战争影像"></canvas>
+            <!-- ★ 写实电影感背景板（F5-film）
+                 铺满全屏的一段 10 秒无缝循环战争素材，替掉原来的像素战场当背景板。
+                 素材：Mixkit "Soldiers walking in the forest"（id 23049）
+                 许可：Mixkit Restricted License —— 仅限个人 / 非商业用途。
+                 切点：原片 6.75s→16.75s，是全片首尾画面状态最接近的区间
+                       （灰度差 25.69，全片最低），所以直接硬切回开头看不出接缝，
+                       不需要做溶接（溶接会在运动幅度大的画面留下鬼影）。
+                 想换素材：直接替换 public/media/intro-loop.mp4 即可，尺寸建议 1280×720、时长 8–12s。 -->
+            <video
+              id="intro-video"
+              class="intro-video"
+              src="/media/intro-loop.mp4"
+              autoplay
+              loop
+              muted
+              playsinline
+              preload="auto"
+              poster="/media/intro-poster.jpg"
+            ></video>
+            <div class="intro-film-tint"></div>
+            <div class="hero-cinematic" aria-hidden="true">
+              <div id="hero-flash"></div>
+              <div id="hero-smoke"></div>
+              <div class="hero-scan"></div>
+            </div>
             <div class="hero-map-corner top-left"></div>
             <div class="hero-map-corner bottom-right"></div>
           </div>
@@ -117,7 +153,7 @@
           <div>
             <div class="eyebrow">MISSION BRIEFING / 战前部署</div>
             <h1>集结你的部队<span>.</span></h1>
-            <p>邀请同一局域网中的朋友，或让电脑加入战场。</p>
+            <p>邀请朋友加入战局，或让电脑接管空位。</p>
           </div>
           <button id="lobby-back" class="button subtle">← 返回大厅</button>
         </div>
@@ -154,7 +190,7 @@
                   <input
                     id="invite-url"
                     readonly
-                    aria-label="局域网邀请地址"
+                    aria-label="邀请地址"
                   /><button id="copy-invite" class="button small">复制</button>
                 </div>
                 <p>分享此地址，或让朋友输入上方房间码。房主服务需保持运行。</p>
@@ -192,11 +228,11 @@
         </div>
         <div class="battle-layout">
           <section class="battlefield-panel">
-            <div class="battlefield-toolbar">
-              <span id="field-status"><i class="tiny-dot"></i> 等待指令</span
-              ><span id="field-hover">选择单位以查看行动范围</span>
-            </div>
             <div id="battle-canvas-wrap" class="battle-canvas-wrap">
+              <!-- F3：垫在战场后面的"无限延伸"层。
+                   地图之外不再是黑边，而是放大模糊后的地形，黑边感消失。
+                   由 renderer.mjs 绘制；不参与交互（pointer-events:none）。 -->
+              <canvas id="map-fill" class="map-fill" aria-hidden="true"></canvas>
               <canvas
                 id="battle-canvas"
                 tabindex="0"
@@ -216,6 +252,25 @@
               ><span class="legend-tip">Esc 取消 · Space 结束回合</span>
             </div>
             <div id="player-strip" class="player-strip"></div>
+            <!-- F5：底部说明栏。高级战争界面里这是常驻的一条（实测色 rgb(107,121,148)），
+                 用来实时解释当前高亮项。原来这段说明文字是挤在右侧栏里的段落，
+                 既占版面又像网页正文——现在收成一行，跟着光标走。 -->
+            <div id="command-bar" class="command-bar">
+              <!-- F5：原来的「战场工具条」是一块浮在地图左上的小面板。
+                   现在收进这条说明栏——高级战争没有一个浮在地图上的状态框，
+                   所有「解释性文字」都在底部这一条里。
+                   ⚠️ #field-status / #field-hover 这两个 id 是 app.mjs 在写的，
+                      搬位置可以，改名不行。 -->
+              <span id="field-status" class="command-bar-status"
+                ><i class="tiny-dot"></i> 等待指令</span
+              >
+              <span class="command-bar-key" aria-hidden="true">▸</span>
+              <span id="command-bar-text">选择一支部队</span>
+              <span id="field-hover" class="command-bar-hover"
+                >选择单位以查看行动范围</span
+              >
+              <span class="command-bar-hint">Esc 取消 · Space 结束回合</span>
+            </div>
           </section>
           <aside class="command-sidebar">
             <section class="commander-panel panel">
@@ -259,6 +314,26 @@
               <ol id="event-log"></ol>
             </section>
           </aside>
+          <!-- F5：命令菜单的落点。
+               为什么不直接放在 #selection-panel 里？因为 `.command-sidebar .panel`
+               带 backdrop-filter，而 backdrop-filter 会为 fixed 定位的后代
+               **建立包含块**——菜单的 left/top 就变成相对面板计算，
+               而不是视口，菜单会跑到屏幕外（第一版就踩了这个坑）。
+               放到这里，祖先没有任何 transform/filter，坐标才是真·视口坐标。 -->
+          <div id="command-menu-host" class="command-menu-host"></div>
+          <!-- F5：指挥室抽屉开关。高级战争平时屏幕上没有 CO 信息面板——
+               那是「按需打开」的菜单项。所以把指挥官/能量/战况电台收进抽屉，
+               默认全隐藏，保留一个小按钮随时开合。 -->
+          <button
+            id="drawer-toggle"
+            class="drawer-toggle"
+            type="button"
+            aria-pressed="false"
+            title="指挥室：指挥官 · 战况电台（Esc 关闭）"
+          >
+            <span aria-hidden="true">▤</span>
+            <em>指挥室</em>
+          </button>
         </div>
       </main>
       <footer class="app-footer">

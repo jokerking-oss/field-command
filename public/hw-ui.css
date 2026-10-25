@@ -1,0 +1,1457 @@
+/* ==========================================================================
+   HW UI · 真实战争界面层（HARSH WAR UI）
+   --------------------------------------------------------------------------
+   起因（用户 2026-10-01）：
+     "画面风格就是有背景视频很好，但是 UI 我觉得要 3D 化，要真实化"
+   背景已经换成写实实拍视频，但 UI 还停在 aw-ui.css 的「GBA 卡带界面语言」：
+   亮青绿描边 rgb(0,255,197) + 中蓝灰底 + 硬黑 2px 外描边 + 全方角。
+   那套语言配像素画很高级，压在写实画面上就是「两个世界的东西贴在一起」。
+
+   本文件做三件事：
+     1. 换调性：冷灰蓝主调（西线战地纪实感），废掉霓虹青绿。
+     2. 换材质：从「平色块」换成「有斜切面与厚度的金属件」。
+     3. 加体积：交互元素给 3D 倾斜与追光（见 app.mjs 的 hwTilt 段）。
+
+   加载顺序：必须在 aw-ui.css **之后**（覆盖它）。见 index.html。
+   回退方式：删掉 index.html 里那一行 <link href="/hw-ui.css"> 即可。
+
+   ★ 为什么要一个新文件而不是改 aw-ui.css：
+     改动面太大（对方 944 行，且它是「按实测规格复刻 AW」的成果，
+     有它自己的研究价值）。新开一层做覆盖，既保留原成果可追溯，
+     也让"回退"变成删一行的事 —— 试错成本最低。
+   ========================================================================== */
+
+/* ---- 0. 调性：冷灰蓝，从最暗到最亮 ---------------------------------- */
+
+:root {
+  /* 金属明度阶梯 */
+  --hw-ink-0: #080a0c;      /* 最深：外描边、压边 */
+  --hw-ink-1: #0d1114;      /* 页面底 */
+  --hw-ink-2: #141a1f;      /* 面板底（深） */
+  --hw-ink-3: #1c242b;      /* 面板底（标准） */
+  --hw-ink-4: #26313a;      /* 面板底（抬升） */
+  --hw-ink-5: #33404b;      /* 分隔、凹槽 */
+  --hw-steel: #5a6b78;      /* 中性钢灰 */
+  --hw-steel-lt: #8b9aa6;   /* 亮钢灰（正文） */
+  --hw-steel-hi: #c8d3da;   /* 高光钢（次级标题） */
+  --hw-paper: #e4eaee;      /* 最亮（关键文字） */
+
+  /* 强调色：只用两处，克制 */
+  --hw-brass: #c8a55a;      /* 军械黄：可交互 / 警示 */
+  --hw-brass-dim: #8a7139;
+  --hw-brass-glow: rgba(200, 165, 90, 0.16);
+  --hw-cold: #7fa8b8;       /* 冷青：已选中 / 激活 */
+  --hw-cold-dim: #43606d;
+
+  /* 金属斜切面参数（上高光 / 下暗边 = 立体感来源） */
+  --hw-hi: rgba(255, 255, 255, 0.10);
+  --hw-lo: rgba(0, 0, 0, 0.55);
+
+  /* 拉丝纹理：极细的竖向明暗条纹，模拟金属拉丝 */
+  --hw-brush: repeating-linear-gradient(
+    92deg,
+    rgba(255, 255, 255, 0.030) 0 1px,
+    rgba(255, 255, 255, 0) 1px 3px
+  );
+
+  /* 覆盖全站 token：aw-ui.css 把它们指向了 AW 的色板，这里接管 */
+  --bg: var(--hw-ink-1);
+  --panel: var(--hw-ink-3);
+  --panel2: var(--hw-ink-4);
+  --line: rgba(140, 160, 175, 0.22);
+  --text: var(--hw-paper);
+  --muted: var(--hw-steel-lt);
+  --accent: var(--hw-brass);
+}
+
+/* 页面底色：冷灰，不再是 AW 的青黑 */
+body {
+  background-color: var(--hw-ink-1) !important;
+  color: var(--hw-steel-lt) !important;
+}
+
+/* ---- 1. 金属件基类 --------------------------------------------------
+   一个元素加上 .hw-steel 就有「斜切面 + 厚度 + 落影」。
+   斜切面的做法：inset box-shadow 上边亮、下边暗 —— 这是最省的做法，
+   不用伪元素，也不会被 overflow 裁掉。 */
+
+.hw-steel {
+  position: relative;
+  background:
+    var(--hw-brush),
+    linear-gradient(168deg, var(--hw-ink-4) 0%, var(--hw-ink-2) 46%, #10161a 100%);
+  border: 1px solid var(--hw-ink-0);
+  box-shadow:
+    inset 0 1px 0 var(--hw-hi),
+    inset 1px 0 0 rgba(255, 255, 255, 0.045),
+    inset 0 -1px 0 var(--hw-lo),
+    inset -1px 0 0 rgba(0, 0, 0, 0.35),
+    0 2px 0 rgba(0, 0, 0, 0.6),
+    0 8px 22px rgba(0, 0, 0, 0.5);
+  color: var(--hw-steel-lt);
+}
+
+/* 四角切角：军械铭牌感。用 clip-path 做"内嵌线框"，
+   只在有 .hw-notched 时加，因为它在小元素上会显得脏。 */
+.hw-notched::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+/* ---- 2. 开场页：文案区 -----------------------------------------------
+   ★ 优先级陷阱（踩过）：
+     aw-hud.css 为了压过 aw-ui.css，大量使用 `html body .xxx` 三级前缀
+     （见它的「需要放大的：用 html body 前缀再抬一级优先级」那段注释）。
+     单纯写 `.screen.landing .landing-copy h1` 会被它压掉 ——
+     实测 h1 的 <span> 继承了 --aw-fs（12px），把「步步为营。」渲染成小字。
+     所以这里也用 `html body` 前缀对齐优先级，并且**显式声明字号**，
+     不依赖继承。换样式文件时这是最容易漏的一点。 */
+
+html body .screen.landing .landing-copy {
+  padding: 0 0 0 44px !important;
+}
+
+html body .screen.landing .landing-copy .eyebrow {
+  display: inline-block;
+  padding: 5px 13px;
+  font-size: 10px !important;
+  letter-spacing: 2.2px !important;
+  font-weight: 700 !important;
+  color: var(--hw-brass) !important;
+  background: linear-gradient(180deg, #2a2318, #1a160f);
+  border: 1px solid var(--hw-brass-dim);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 2px 0 rgba(0, 0, 0, 0.6);
+  text-shadow: none !important;
+}
+
+html body .screen.landing .landing-copy h1 {
+  font-size: clamp(36px, 3.9vw, 56px) !important;
+  font-weight: 850 !important;
+  letter-spacing: -1.5px !important;
+  line-height: 1.22 !important;
+  color: var(--hw-paper) !important;
+  /* 金属标题不用硬描边——改用"上亮下暗"的拟物投影，像压出来的钢字 */
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.14),
+    0 -1px 0 rgba(0, 0, 0, 0.7),
+    0 6px 26px rgba(0, 0, 0, 0.92) !important;
+  margin: 18px 0 14px !important;
+}
+html body .screen.landing .landing-copy h1 span {
+  color: var(--hw-brass) !important;
+  text-shadow:
+    0 1px 0 rgba(255, 235, 190, 0.2),
+    0 -1px 0 rgba(0, 0, 0, 0.7),
+    0 6px 30px rgba(200, 165, 90, 0.28) !important;
+}
+
+html body .screen.landing .landing-copy .intro {
+  color: #93a2ad !important;
+  font-size: 12.5px !important;
+  line-height: 1.85 !important;
+  max-width: 340px !important;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9) !important;
+}
+
+/* ---- 3. 开场页：按钮组 ----------------------------------------------- */
+
+/* 原本按钮组是一块 AW 面板（青色描边）。改成"一块金属基座"，
+   按钮像嵌在基座上的实体按键。 */
+.screen.landing .landing-actions {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+  margin-top: 22px !important;
+  padding: 13px !important;
+  max-width: 348px !important;
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #1a2229 0%, #121920 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  box-shadow:
+    inset 0 1px 0 var(--hw-hi),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.7),
+    0 2px 0 rgba(0, 0, 0, 0.65),
+    0 12px 34px rgba(0, 0, 0, 0.55) !important;
+  border-radius: 0 !important;
+}
+
+/* 实体按键：核心是「厚度」——靠 0 3px 0 的硬边制造，
+   按下时厚度收掉 + 下沉 3px，就有真实的按压感。 */
+.screen.landing .landing-actions .button {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  width: 100% !important;
+  padding: 13px 16px !important;
+  border-radius: 0 !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #3a4750 0%, #27313a 42%, #1a2229 100%) !important;
+  color: var(--hw-paper) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6),
+    0 3px 0 var(--hw-ink-0),
+    0 6px 14px rgba(0, 0, 0, 0.55) !important;
+  transition:
+    transform 0.09s ease,
+    box-shadow 0.09s ease,
+    filter 0.16s ease !important;
+  outline: none !important;
+}
+
+.screen.landing .landing-actions .button:hover {
+  filter: brightness(1.18) !important;
+}
+
+.screen.landing .landing-actions .button:active {
+  transform: translateY(3px) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6),
+    0 0 0 var(--hw-ink-0),
+    0 2px 6px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* 主按钮（开始单人演习）：左侧军械黄色条 + 从顶部渗下的暖光 */
+.screen.landing .landing-actions .button.primary {
+  border-left: 3px solid var(--hw-brass) !important;
+  background:
+    linear-gradient(180deg, rgba(200, 165, 90, 0.13), transparent 46%),
+    var(--hw-brush),
+    linear-gradient(180deg, #3a4750 0%, #27313a 42%, #1a2229 100%) !important;
+}
+.screen.landing .landing-actions .button.primary .button-icon {
+  color: var(--hw-brass) !important;
+}
+.screen.landing .landing-actions .button.primary b {
+  color: var(--hw-brass) !important;
+}
+
+/* 次级按钮：压暗一档，和主按钮拉开层级 */
+.screen.landing .landing-actions .button.secondary {
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #2b353d 0%, #1d252b 46%, #141a1f 100%) !important;
+  color: var(--hw-steel-hi) !important;
+}
+.screen.landing .landing-actions .button.secondary:hover {
+  color: var(--hw-paper) !important;
+}
+
+/* 按钮内小字 */
+.screen.landing .landing-actions .button small {
+  color: #7d8c98 !important;
+}
+
+/* 「继续上次作战」保留但改成冷青，和主按钮区分 */
+.screen.landing .resume-button {
+  border-left: 3px solid var(--hw-cold) !important;
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #2c3a42 0%, #1e262c 100%) !important;
+  color: var(--hw-cold) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 3px 0 var(--hw-ink-0),
+    0 6px 14px rgba(0, 0, 0, 0.5) !important;
+}
+.screen.landing .resume-button:hover { color: #a9cbd8 !important; }
+
+/* ---- 4. 开场页：统计条（数据凹槽） ----------------------------------
+   凹槽的做法和凸起**正好反过来**：inset 阴影从顶部压进来（暗），
+   底部给一条亮线 —— 视觉上就是"凹进去"的。 */
+
+.screen.landing .feature-stats {
+  display: flex !important;
+  gap: 3px !important;
+  margin-top: 20px !important;
+  max-width: 348px !important;
+}
+
+.screen.landing .feature-stats > div {
+  flex: 1 !important;
+  padding: 9px 12px !important;
+  border: 1px solid #080c0e !important;
+  border-left: 0 !important;
+  background: linear-gradient(180deg, #0b0f12 0%, #151c21 100%) !important;
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.85),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 0 rgba(255, 255, 255, 0.055) !important;
+  border-radius: 0 !important;
+  margin-right: 0 !important;
+}
+
+.screen.landing .feature-stats strong {
+  display: block;
+  font-size: 21px !important;
+  font-weight: 800 !important;
+  font-family: var(--aw-font-num) !important;
+  color: var(--hw-paper) !important;
+  letter-spacing: 0.5px;
+  line-height: 1.15;
+}
+/* 第一个数字给军械黄，做视觉锚点 */
+.screen.landing .feature-stats > div:first-child strong {
+  color: var(--hw-brass) !important;
+}
+
+.screen.landing .feature-stats span {
+  font-size: 10px !important;
+  color: #68757f !important;
+  letter-spacing: 1.3px;
+  display: block;
+  margin-top: 2px;
+}
+
+/* ---- 5. 开场页：顶部标题带 + 底部信息栏 ------------------------------
+   原先是两条实色横条（顶部青灰渐变、底部 rgb(107,121,148)），
+   压在写实画面上是两条突兀的浅带。改成半透明金属条。 */
+
+.hero-panel .panel-heading {
+  background: linear-gradient(
+    180deg,
+    rgba(20, 26, 31, 0.94) 0%,
+    rgba(13, 17, 20, 0.72) 100%
+  ) !important;
+  backdrop-filter: blur(6px) saturate(0.9) !important;
+  border-bottom: 1px solid rgba(140, 160, 175, 0.22) !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 6px 20px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* LIVE FIELD 标签：从亮青绿改成军械黄小铭牌 */
+.hero-panel .orange-tag {
+  color: #1a160f !important;
+  background: linear-gradient(180deg, #d4b26a, #a8873f) !important;
+  border-radius: 0 !important;
+  padding: 1.5px 7px !important;
+  font-weight: 800 !important;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+.hero-panel .hero-map-name {
+  color: var(--hw-steel-hi) !important;
+}
+
+.hero-panel .coordinates {
+  color: #7d8c98 !important;
+}
+
+.hero-panel .hero-bottom {
+  background: linear-gradient(
+    180deg,
+    rgba(16, 21, 26, 0.86) 0%,
+    rgba(9, 12, 15, 0.96) 100%
+  ) !important;
+  backdrop-filter: blur(6px) saturate(0.9) !important;
+  border-top: 1px solid rgba(140, 160, 175, 0.26) !important;
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.045) inset, 0 -8px 24px rgba(0, 0, 0, 0.55) !important;
+}
+.hero-panel .hero-bottom strong {
+  color: var(--hw-paper) !important;
+}
+.hero-panel .hero-bottom span {
+  color: #8494a0 !important;
+}
+.hero-panel .hero-bottom .mini-tank {
+  color: var(--hw-brass) !important;
+}
+.hero-panel .hero-badge {
+  background: rgba(9, 12, 15, 0.9) !important;
+  border: 1px solid rgba(200, 165, 90, 0.5) !important;
+  color: var(--hw-brass) !important;
+}
+.hero-panel .hero-badge span {
+  color: var(--hw-brass) !important;
+}
+
+/* ---- 6. 顶栏（声音 / 手册 / 标题） ---------------------------------- */
+
+.screen > header .help-button,
+.screen > header button,
+header .sound-button {
+  border-radius: 0 !important;
+}
+
+/* ---- 7. 战内 HUD：面板统一材质 -------------------------------------- */
+
+/* 侧栏 / 指挥室抽屉 / 选中面板 / 日志，全部套金属件 */
+.command-sidebar,
+.selection-panel,
+.log-panel,
+.player-strip,
+.battlefield-toolbar,
+.map-legend,
+.player-card {
+  background:
+    var(--hw-brush),
+    linear-gradient(168deg, var(--hw-ink-4) 0%, var(--hw-ink-2) 46%, #10161a 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 0 1px 0 var(--hw-hi),
+    inset 0 -1px 0 var(--hw-lo),
+    0 2px 0 rgba(0, 0, 0, 0.6),
+    0 10px 26px rgba(0, 0, 0, 0.5) !important;
+  color: var(--hw-steel-lt) !important;
+  backdrop-filter: none !important;
+}
+
+/* 面板标题：军械黄小铭牌 */
+.command-sidebar h2,
+.selection-panel h3,
+.log-panel h3,
+.player-strip h3 {
+  color: var(--hw-steel-hi) !important;
+  letter-spacing: 1.2px !important;
+}
+
+/* ---- 8. 命令菜单：贴单位弹出的那圈按钮 ------------------------------- */
+
+.command-menu {
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #2a343c 0%, #161d23 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 0 1px 0 var(--hw-hi),
+    0 4px 0 rgba(0, 0, 0, 0.6),
+    0 14px 34px rgba(0, 0, 0, 0.68) !important;
+}
+
+.command-menu button,
+.command-menu .menu-item {
+  border-radius: 0 !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.55) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+  color: var(--hw-steel-hi) !important;
+  background: linear-gradient(180deg, rgba(58, 71, 80, 0.5), rgba(26, 34, 41, 0.5)) !important;
+  transition: filter 0.12s ease, color 0.12s ease !important;
+}
+.command-menu button:hover,
+.command-menu .menu-item:hover {
+  filter: brightness(1.25) !important;
+  color: var(--hw-paper) !important;
+}
+
+/* 危险动作（待机 / 自毁）：暗红 */
+.command-menu button[data-action="wait"],
+.command-menu .menu-item.danger {
+  border-left: 3px solid #a4523c !important;
+}
+
+/* ---- 9. 玩家状态条：能量槽 ------------------------------------------ */
+
+.energy-track {
+  background: linear-gradient(180deg, #080c0e, #12181c) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.8),
+    0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+.energy-track > i {
+  border-radius: 0 !important;
+  background: linear-gradient(180deg, #d4b26a, #8a7139) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
+}
+
+/* ---- 10. 结束回合按钮：做成突出的军械黄实体键 ----------------------- */
+
+.turn-button,
+.end-turn-button {
+  border-radius: 0 !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #4a3f28 0%, #2e2717 48%, #1c1810 100%) !important;
+  color: var(--hw-brass) !important;
+  font-weight: 800 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 190, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6),
+    0 3px 0 var(--hw-ink-0),
+    0 7px 16px rgba(0, 0, 0, 0.55) !important;
+  transition: transform 0.09s ease, box-shadow 0.09s ease, filter 0.16s ease !important;
+}
+.turn-button:hover,
+.end-turn-button:hover { filter: brightness(1.22) !important; }
+.turn-button:active,
+.end-turn-button:active {
+  transform: translateY(3px) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 190, 0.14),
+    0 0 0 var(--hw-ink-0),
+    0 2px 6px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ---- 11. 兵种色：原先是高饱和，压到纪实调 ---------------------------
+   原来红蓝阵营色很艳。写实战争调性下要压暗压灰，
+   但**必须保持可区分** —— 这是功能色，不能为了"好看"牺牲辨识。 */
+
+/* ---- 12. 通用：清掉残留的亮青绿 ------------------------------------- */
+
+/* aw-ui.css 里散落着一批 rgb(0,255,197) 的硬编码（描边、文字、发光）。
+   它们是"霓虹感"的主要来源，这里统一压掉。 */
+.screen.landing *,
+.command-sidebar *,
+.command-menu *,
+.selection-panel *,
+.log-panel *,
+.player-strip *,
+.battlefield-toolbar *,
+.map-legend * {
+  text-shadow: none;
+}
+
+/* 但标题与关键数值要保留投影（可读性）。上面那条太粗暴了，撤回关键几处。 */
+.screen.landing .landing-copy h1,
+.screen.landing .landing-copy h1 span,
+.screen.landing .landing-copy .intro,
+.screen.landing .landing-copy .eyebrow {
+  text-shadow: inherit;
+}
+html body .screen.landing .landing-copy h1 {
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.14),
+    0 -1px 0 rgba(0, 0, 0, 0.7),
+    0 6px 26px rgba(0, 0, 0, 0.92) !important;
+}
+html body .screen.landing .landing-copy h1 span {
+  text-shadow:
+    0 1px 0 rgba(255, 235, 190, 0.2),
+    0 -1px 0 rgba(0, 0, 0, 0.7),
+    0 6px 30px rgba(200, 165, 90, 0.28) !important;
+}
+html body .screen.landing .landing-copy .intro {
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9) !important;
+}
+
+/* ---- 13. 3D 倾斜（配合 app.mjs 的 hwTilt） -------------------------- */
+
+.hw-tilt {
+  transform-style: preserve-3d;
+  transform:
+    perspective(760px)
+    rotateX(var(--hw-rx, 0deg))
+    rotateY(var(--hw-ry, 0deg))
+    translateZ(0);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+/* 追光层 */
+.hw-tilt::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: var(--hw-gl, 0);
+  background: radial-gradient(
+    300px circle at var(--hw-gx, 50%) var(--hw-gy, 50%),
+    rgba(255, 255, 255, 0.13),
+    transparent 62%
+  );
+  transition: opacity 0.2s ease;
+}
+
+/* 按钮不参与倾斜（会晕），只保留追光 */
+.hw-glow {
+  position: relative;
+}
+.hw-glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--hw-gl, 0);
+  background: radial-gradient(
+    220px circle at var(--hw-gx, 50%) var(--hw-gy, 50%),
+    rgba(255, 255, 255, 0.14),
+    transparent 60%
+  );
+  transition: opacity 0.2s ease;
+}
+
+/* ---- 14. 无障碍：尊重"减少动态效果" --------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .hw-tilt {
+    transform: none !important;
+    transition: none !important;
+  }
+  .hw-tilt::before { display: none; }
+}
+
+/* ==========================================================================
+   HW UI · 修正轮（2026-10-01 第一版截图后发现的三个真问题）
+   ========================================================================== */
+
+/* 问题 1：副标题「步步为营。」渲染成 12px 小字。
+   根因：aw-hud.css 把 `html body .landing h1` 的字号设成 --aw-fs-hero，
+   但 h1 内部的 <span> 没有被一起设，于是继承到基础字号 --aw-fs（12px）。
+   我第一版只改了颜色没改字号，所以黄字小小地缩在那里。
+   ★ 修法：显式给 span 声明 font-size: inherit —— 让它跟 h1 一样大。
+     用 inherit 而不是写死数值，这样将来改 h1 字号时它自动跟上。 */
+html body .screen.landing .landing-copy h1 span {
+  font-size: inherit !important;
+  line-height: inherit !important;
+  letter-spacing: inherit !important;
+  display: inline !important;
+}
+
+/* 问题 2：按钮里的说明小字太虚（rgb(125,140,152) + opacity .75）。
+   压在深色金属上基本糊掉。提亮 + 去掉 opacity，改成用"字号小 + 亮度低"
+   来建立层级，而不是靠透明度。 */
+html body .screen.landing .landing-actions .button small {
+  color: #9dabb5 !important;
+  font-size: 11.5px !important;
+  opacity: 1 !important;
+  letter-spacing: 0.3px;
+  margin-top: 2px;
+}
+
+/* 问题 3：统计条的标签几乎看不见（rgb(104,117,127) 打在 10px 上）。
+   标签是"辅助信息"，可以弱，但必须能读 —— 压到 12px 起步并提亮。 */
+html body .screen.landing .feature-stats span {
+  color: #8d9ba6 !important;
+  font-size: 10.5px !important;
+  letter-spacing: 1.1px;
+}
+/* 数值本身也再亮一档，确保在金属底上跳出来 */
+html body .screen.landing .feature-stats strong {
+  color: #eef3f6 !important;
+}
+html body .screen.landing .feature-stats > div:first-child strong {
+  color: #d9b76d !important;
+}
+
+/* 顺带再确认一次按钮主体的字号（同样受 --aw-fs 影响） */
+html body .screen.landing .landing-actions .button {
+  font-size: 13.5px !important;
+}
+html body .screen.landing .landing-actions .button.primary b {
+  font-size: 15px !important;
+}
+
+/* ==========================================================================
+   HW UI · 清剿残留的亮青绿 rgb(0,255,197)
+   --------------------------------------------------------------------------
+   用探针扫过全页，实际残留 10 处（下面按元素逐个清）。
+   这个色的饱和度太高，在冷灰金属调里像霓虹灯管，是"塑料感"的最大来源。
+   注意：它是 aw-ui.css 的"灵魂色"（那一层的设计核心里，
+   亮青绿 = 可交互），所以**不能简单粗暴地全局 replace**——
+   那样会连带着把"选中态/可交互"的语义一起破坏掉。
+   这里逐个换成有对应语义的色：
+     可交互/强调 → 军械黄 --hw-brass
+     选中/激活   → 冷青   --hw-cold
+     纯装饰      → 冷灰   --hw-steel
+   ========================================================================== */
+
+/* nav-label / version-label：顶栏的小标签，纯装饰 → 冷灰 */
+html body .screen > header .nav-label,
+html body .screen > header .version-label {
+  color: var(--hw-steel-lt) !important;
+}
+html body .screen > header .nav-label:hover {
+  color: var(--hw-paper) !important;
+}
+
+/* small-cross：eyebrow 里的 ✦ 小十字，是"强调装饰" → 军械黄 */
+html body .screen.landing .small-cross {
+  color: var(--hw-brass) !important;
+}
+
+/* 顶栏的 <i> 与 <small>：图标/辅助文字 → 冷灰 */
+html body .screen > header i,
+html body .screen > header small {
+  color: var(--hw-steel) !important;
+}
+
+/* hero-map-corner：战场四角的取景框角饰。原先是亮青绿，
+   在写实画面上像画了两道荧光笔 → 改成冷灰白，做"取景框"而不是"发光框" */
+html body .hero-panel .hero-map-corner {
+  border-color: rgba(200, 214, 222, 0.6) !important;
+}
+html body .hero-panel .hero-map-corner.top-left {
+  border-color: rgba(200, 214, 222, 0.6) !important;
+}
+html body .hero-panel .hero-map-corner.bottom-right {
+  border-color: rgba(200, 214, 222, 0.6) !important;
+}
+
+/* tiny-dot：状态小圆点，"在线/就绪"→ 冷青（表示"活着"，但不要刺眼） */
+html body .tiny-dot {
+  background: var(--hw-cold) !important;
+  box-shadow: 0 0 6px rgba(127, 168, 184, 0.5) !important;
+}
+
+/* 顶栏整体：底色改成冷灰金属，去掉青绿描边 */
+html body .screen > header {
+  background: linear-gradient(
+    180deg,
+    rgba(20, 26, 31, 0.96) 0%,
+    rgba(13, 17, 20, 0.9) 100%
+  ) !important;
+  border-bottom: 1px solid rgba(140, 160, 175, 0.24) !important;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.04), 0 4px 18px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(6px) saturate(0.9) !important;
+}
+
+/* 顶栏按钮（声音 / 战地手册）：金属小键 */
+html body .screen > header button,
+html body .help-button,
+html body .sound-button {
+  background: linear-gradient(180deg, #2b353d 0%, #1a2128 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-radius: 0 !important;
+  color: var(--hw-steel-hi) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 2px 0 rgba(0, 0, 0, 0.6) !important;
+  transition: filter 0.14s ease, color 0.14s ease !important;
+}
+html body .screen > header button:hover,
+html body .help-button:hover,
+html body .sound-button:hover {
+  filter: brightness(1.25) !important;
+  color: var(--hw-paper) !important;
+}
+
+/* ==========================================================================
+   修正：「步步为营。」放大后字重过重、黄得过亮
+   --------------------------------------------------------------------------
+   加了 font-size:inherit 之后它跟着 h1 变成 56px，但因为 --
+   它同时继承了 h1 的 font-weight:850，加上军械黄本身亮，
+   整体比主标题还抢。副标题应该是"点睛"，不是"第二个主标题"。
+   修法：降一档字重 + 用稍暗的黄 + 减少发光。
+   ========================================================================== */
+html body .screen.landing .landing-copy h1 span {
+  font-weight: 700 !important;
+  color: #c8a55a !important;
+  text-shadow:
+    0 1px 0 rgba(255, 235, 190, 0.14),
+    0 -1px 0 rgba(0, 0, 0, 0.7),
+    0 4px 20px rgba(200, 165, 90, 0.16) !important;
+}
+
+/* ==========================================================================
+   HW UI · 顶栏（header.topbar）修正
+   --------------------------------------------------------------------------
+   ★ 我上一轮写错了选择器：以为顶栏是 `.screen > header`，
+     实测它的真实层级是 `body > div#app > header.topbar`——
+     它根本不在 .screen 里，所以那一整段规则全部空转，
+     顶栏的亮青绿原样留着（截图里那条绿竖线和青色"作战大厅"就是它）。
+   教训：改别人写的界面时，**先用探针把真实 DOM 层级打出来**，
+        不要凭截图猜选择器，否则会写一堆"看起来对但根本没生效"的规则。
+   ========================================================================== */
+
+/* 顶栏底色：冷灰金属条 */
+html body header.topbar {
+  background: linear-gradient(
+    180deg,
+    rgba(20, 26, 31, 0.97) 0%,
+    rgba(12, 16, 19, 0.92) 100%
+  ) !important;
+  border-bottom: 1px solid rgba(140, 160, 175, 0.24) !important;
+  box-shadow:
+    inset 0 -1px 0 rgba(255, 255, 255, 0.045),
+    0 4px 20px rgba(0, 0, 0, 0.55) !important;
+  backdrop-filter: blur(7px) saturate(0.88) !important;
+}
+
+/* 那条竖线是 .brand 的左侧边框或 .brand-mark，改成军械黄 */
+html body header.topbar .brand {
+  border-left-color: var(--hw-brass) !important;
+  color: var(--hw-steel-hi) !important;
+}
+html body header.topbar .brand-mark {
+  color: var(--hw-brass) !important;
+}
+/* brand 里的字（前线指令 / FIELD COMMAND） */
+html body header.topbar .brand strong,
+html body header.topbar .brand b {
+  color: var(--hw-paper) !important;
+}
+html body header.topbar .brand small,
+html body header.topbar .brand span {
+  color: var(--hw-steel) !important;
+}
+
+/* 「作战大厅 / TACTICAL SYSTEM」这段上下文标签 */
+html body header.topbar .top-context {
+  color: var(--hw-steel-hi) !important;
+}
+html body header.topbar .top-context strong {
+  color: var(--hw-paper) !important;
+}
+html body header.topbar .nav-label {
+  color: var(--hw-steel-hi) !important;
+  letter-spacing: 1.4px !important;
+}
+html body header.topbar .version-label {
+  color: var(--hw-steel) !important;
+  letter-spacing: 1.2px !important;
+}
+
+/* 顶栏里那三个 <i>（装饰分隔符）与 <small> */
+html body header.topbar i {
+  color: var(--hw-ink-5) !important;
+}
+html body header.topbar small {
+  color: var(--hw-steel) !important;
+}
+
+/* 网络状态 */
+html body header.topbar .network-status {
+  color: var(--hw-steel-lt) !important;
+}
+
+/* 顶栏按钮：金属小键（这一条之前也因选择器错误没生效） */
+html body header.topbar button {
+  background: linear-gradient(180deg, #2b353d 0%, #1a2128 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-radius: 0 !important;
+  color: var(--hw-steel-hi) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 2px 0 rgba(0, 0, 0, 0.6) !important;
+  transition: filter 0.14s ease, color 0.14s ease !important;
+}
+html body header.topbar button:hover {
+  filter: brightness(1.25) !important;
+  color: var(--hw-paper) !important;
+}
+html body header.topbar .help-button {
+  border-left: 2px solid var(--hw-brass) !important;
+}
+html body header.topbar .brand {
+  background: none !important;
+}
+
+/* .tiny-dot 在 .landing-note 里，而 .landing-note 被 aw-ui.css 设为
+   display:none —— 它本来就不显示，但仍然统一改成冷青，避免将来
+   恢复那块内容时又冒出青绿。 */
+html body .landing-note .tiny-dot,
+html body .tiny-dot {
+  background: var(--hw-cold) !important;
+  box-shadow: 0 0 6px rgba(127, 168, 184, 0.5) !important;
+}
+
+/* ==========================================================================
+   HW UI · 最后三处青绿（用 CSS.getMatchedStylesForNode 查出来的真凶）
+   --------------------------------------------------------------------------
+   这两处我前面"以为改了"其实都没打到点上，原因值得记：
+     1. `.brand-mark i` —— 品牌标记里的小方块，用的是 **background**，
+        而我写的是 color。属性都不一样，当然没效果。
+     2. `.tiny-dot` —— aw-ui.css 里的规则是**逗号复合选择器**
+        `.tiny-dot, .hero-badge .tiny-dot`，它的权重和我那条
+        `html body .tiny-dot` 相比，靠 !important + 元素个数的组合赢了。
+        而且 `.network-status i, .tiny-dot` 里还带着 `background:#a4c49b`
+        （一个淡绿），也是同一股青绿味的来源。
+
+   ★ 通用教训：用 Chrome DevTools 的 CSS.getMatchedStylesForNode
+     （或直接在 F12 里看"已匹配的规则"）查出**真正生效的那条规则**，
+     再针对性覆盖。凭截图猜"应该是 xx 设的"会反复空转。
+   ========================================================================== */
+
+/* 品牌标记的三个小方块：改成军械黄，并且做成"刻度"感而不是纯色块 */
+html body header.topbar .brand-mark i,
+html body .brand-mark i {
+  background: var(--hw-brass-dim) !important;
+  box-shadow: none !important;
+}
+/* 第一个亮一点，形成层次 */
+html body header.topbar .brand-mark i:first-child,
+html body .brand-mark i:first-child {
+  background: var(--hw-brass) !important;
+}
+
+/* 状态圆点：冷青。用三层选择器叠 !important 保证压过 aw-ui 的复合规则 */
+html body .tiny-dot,
+html body .hero-badge .tiny-dot,
+html body .network-status .tiny-dot,
+html body .network-status i {
+  background: var(--hw-cold) !important;
+  box-shadow: 0 0 6px rgba(127, 168, 184, 0.45) !important;
+}
+/* 网络状态那个独立圆点（选择器 `.network-status i`）*/
+html body .network-status i {
+  background: var(--hw-cold) !important;
+  box-shadow: 0 0 6px rgba(127, 168, 184, 0.45) !important;
+}
+
+/* 顺带：品牌标记的容器本身如果是青绿底也要压掉 */
+html body header.topbar .brand-mark {
+  color: var(--hw-brass) !important;
+}
+
+/* ==========================================================================
+   HW UI · 战内 HUD 全面金属化（第二轮，2026-10-01）
+   --------------------------------------------------------------------------
+   第一轮我只改了开场页，战内 HUD 基本没动 —— 进对局截图一看，
+   上下两条、右下角按钮、选中条、图例全还是 aw-ui.css 的「GBA 卡带语言」：
+   亮青绿描边 + 中蓝灰平色块 + 硬黑 2px 描边。
+   探针扫出 **9 处残留亮青绿**（见下），外加底栏那块 rgb(107,121,148)。
+
+   ★ 这一轮最大的一根杠杆：直接**重映射 AW 的色板变量**。
+      aw-ui.css 把几乎所有颜色都写成 var(--aw-cyan) / var(--aw-panel) /
+      var(--aw-item) / var(--aw-desc) 这几个 token，而本文件加载在它之后，
+      所以在 :root 里覆盖这几个变量，**一处改动同时换掉几十条规则的色**。
+      这比逐条找选择器可靠得多 —— 逐条找必然会漏（第一轮就漏了 9 处）。
+   ========================================================================== */
+
+:root {
+  /* 霓虹青绿 → 冷青（"已选中/可交互"的语义保留，但不再是荧光管） */
+  --aw-cyan: #7fa8b8;                      /* 原 rgb(0,255,197) */
+  --aw-cyan-dim: #2c3d45;                  /* 原 rgb(25,113,99) 选中项填充 */
+  --aw-panel: #1c242b;                     /* 原 rgb(41,65,74) 面板底 */
+  --aw-item: #26313a;                      /* 原 rgb(74,89,107) 菜单项底 */
+  --aw-item-dark: #141a1f;                 /* 原 rgb(33,40,41) 次级项底 */
+  --aw-desc: #10161a;                      /* 原 rgb(107,121,148) 说明栏底 */
+  --aw-outline: #000000;                   /* 硬黑描边保留（它是有用的） */
+  --aw-black: #0d1114;                     /* 原 #050d0c 战场外的世界 */
+
+  /* 顺带把 token 也重指一遍，防止 aw-ui.css 里被二次赋值 */
+  --line: rgba(140, 160, 175, 0.22);
+}
+
+/* ---- A. 底部说明栏：从「浅蓝灰塑料条」变成「底部装甲带」 ----------------
+   原来 rgb(107,121,148) 是整条最亮的东西，压在写实地图上像一条胶带。
+   改成深色金属带 + 顶部一道亮线（模拟钢板边缘反光）。 */
+html body .command-bar {
+  height: 32px !important;
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #222b33 0%, #161d23 55%, #10161a 100%) !important;
+  border-top: 1px solid rgba(200, 214, 222, 0.22) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.6),
+    0 -3px 14px rgba(0, 0, 0, 0.55) !important;
+  color: var(--hw-steel-lt) !important;
+}
+/* 栏内文字一律浅色（原来是深色字打在浅底上，现在底变深了） */
+html body .command-bar,
+html body .command-bar *,
+html body #command-bar-text,
+html body .command-bar-key {
+  color: var(--hw-steel-lt) !important;
+}
+html body #command-bar-text {
+  color: var(--hw-paper) !important;
+  letter-spacing: 0.2px !important;
+}
+html body .command-bar-hint {
+  color: var(--hw-steel) !important;
+}
+html body .command-bar-status {
+  border-right-color: rgba(200, 214, 222, 0.18) !important;
+  color: var(--hw-steel-hi) !important;
+}
+html body .command-bar-hover {
+  border-left-color: rgba(200, 214, 222, 0.18) !important;
+  color: var(--hw-steel-lt) !important;
+}
+/* 状态小圆点：从"亮青绿荧光"改成军械黄指示灯 */
+html body .command-bar .tiny-dot,
+html body .command-bar-status .tiny-dot {
+  background: var(--hw-brass) !important;
+  box-shadow: 0 0 7px rgba(200, 165, 90, 0.65) !important;
+}
+
+/* ---- B. 战况带（.battle-header）：装甲带的下沿 -------------------------- */
+html body .battle-header {
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #1d252c 0%, #141a1f 100%) !important;
+  border-bottom: 1px solid rgba(200, 214, 222, 0.16) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 2px 10px rgba(0, 0, 0, 0.5) !important;
+  color: var(--hw-steel-lt) !important;
+}
+html body .battle-header .mission-title h1 {
+  color: var(--hw-paper) !important;
+}
+html body .battle-header .battle-turn small {
+  color: var(--hw-steel) !important;
+}
+/* 战况带里的工具小键：金属 */
+html body .battle-header .battle-tools .button {
+  background: linear-gradient(180deg, #2b353d 0%, #1a2128 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  color: var(--hw-steel-hi) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 2px 0 rgba(0, 0, 0, 0.6) !important;
+}
+html body .battle-header .battle-tools .button:hover {
+  filter: brightness(1.3) !important;
+  color: var(--hw-paper) !important;
+  border-color: var(--hw-brass-dim) !important;
+}
+
+/* ---- C. 战场顶部的「战场工具条」--------------------------------------- */
+html body .battlefield-toolbar,
+html body #battlefield-toolbar {
+  background:
+    var(--hw-brush),
+    linear-gradient(168deg, var(--hw-ink-4) 0%, var(--hw-ink-2) 46%, #10161a 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-left: 3px solid var(--hw-brass-dim) !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 0 1px 0 var(--hw-hi),
+    inset 0 -1px 0 var(--hw-lo),
+    0 2px 0 rgba(0, 0, 0, 0.6),
+    0 10px 26px rgba(0, 0, 0, 0.5) !important;
+  color: var(--hw-steel-lt) !important;
+}
+
+/* ---- D. 选中单位条（#selection-panel）：贴左下的金属横条 ---------------- */
+html body #selection-panel {
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #232c34 0%, #161d23 60%, #12181c 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-left: 3px solid var(--hw-brass) !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.55),
+    0 2px 0 rgba(0, 0, 0, 0.6),
+    0 10px 24px rgba(0, 0, 0, 0.5) !important;
+  color: var(--hw-steel-lt) !important;
+  backdrop-filter: none !important;
+}
+html body #selection-panel h3,
+html body #selection-panel .selection-top h2 {
+  color: var(--hw-paper) !important;
+}
+/* 单位数值：亮白；标签：钢灰 */
+html body #selection-panel .unit-stats span {
+  color: var(--hw-steel) !important;
+}
+html body #selection-panel .unit-stats strong {
+  color: var(--hw-paper) !important;
+}
+/* HP 徽章：凹槽感 */
+html body #selection-panel .hp-badge {
+  background: rgba(0, 0, 0, 0.55) !important;
+  border: 1px solid rgba(200, 214, 222, 0.28) !important;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7) !important;
+  color: var(--hw-paper) !important;
+}
+/* 交战预览：从"橙红霓虹框"改成暗红警示牌 */
+html body #selection-panel .combat-preview {
+  background: linear-gradient(180deg, rgba(74, 34, 26, 0.72), rgba(40, 18, 14, 0.72)) !important;
+  border: 1px solid rgba(196, 96, 72, 0.55) !important;
+  color: #e6b9a8 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+}
+html body #selection-panel .combat-preview strong {
+  color: #ffcdb8 !important;
+}
+/* 未选中时的提示（⌖ 十字 + 标题）：青绿 → 冷青 */
+html body #selection-panel .selection-hint .crosshair {
+  color: var(--hw-cold) !important;
+  text-shadow: 0 0 8px rgba(127, 168, 184, 0.4) !important;
+}
+html body #selection-panel .selection-hint h3 {
+  color: var(--hw-steel-hi) !important;
+}
+
+/* ---- E. 右下角玩家状态条（.player-strip）------------------------------- */
+html body .player-strip {
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #1e262d 0%, #12181c 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 2px 0 rgba(0, 0, 0, 0.6),
+    0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: none !important;
+}
+html body .player-card {
+  background: linear-gradient(180deg, rgba(38, 49, 58, 0.65), rgba(20, 26, 31, 0.65)) !important;
+  border: 1px solid rgba(200, 214, 222, 0.12) !important;
+  border-radius: 0 !important;
+}
+html body .player-card.is-active,
+html body .player-card.active {
+  border-color: var(--hw-brass) !important;
+  box-shadow: inset 0 0 0 1px rgba(200, 165, 90, 0.25) !important;
+}
+
+/* ---- F. 结束回合按钮（真实类名是 .end-turn-area .button.large）---------
+   ★ 第一轮我写的选择器是 .turn-button / .end-turn-button —— **不存在这两个类**，
+     所以那条规则完全空转，按钮原样是青绿。这里按实测类名重写。 */
+html body .end-turn-area .button.large,
+html body .end-turn-area #end-turn {
+  border-radius: 0 !important;
+  border: 1px solid rgba(200, 165, 90, 0.55) !important;
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #4a3f28 0%, #2e2717 48%, #1c1810 100%) !important;
+  color: #e8cd8e !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.5px !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.7) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 190, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6),
+    0 3px 0 var(--hw-ink-0),
+    0 8px 18px rgba(0, 0, 0, 0.55) !important;
+  transition: transform 0.09s ease, box-shadow 0.09s ease, filter 0.16s ease !important;
+}
+html body .end-turn-area .button.large:hover:not([disabled]),
+html body .end-turn-area #end-turn:hover:not([disabled]) {
+  filter: brightness(1.24) !important;
+  color: #fff3d6 !important;
+}
+html body .end-turn-area .button.large:active:not([disabled]),
+html body .end-turn-area #end-turn:active:not([disabled]) {
+  transform: translateY(3px) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 235, 190, 0.14),
+    0 0 0 var(--hw-ink-0),
+    0 2px 6px rgba(0, 0, 0, 0.5) !important;
+}
+html body .end-turn-area .button.large[disabled],
+html body .end-turn-area #end-turn[disabled] {
+  background: linear-gradient(180deg, #2a323a 0%, #191f25 100%) !important;
+  border-color: rgba(200, 214, 222, 0.18) !important;
+  color: rgba(200, 214, 222, 0.45) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 2px 0 rgba(0, 0, 0, 0.5) !important;
+}
+/* 存档状态小签 */
+html body .end-turn-area #save-status {
+  background: rgba(13, 17, 20, 0.85) !important;
+  border: 1px solid rgba(200, 214, 222, 0.14) !important;
+  border-radius: 0 !important;
+  color: var(--hw-steel-lt) !important;
+}
+
+/* ---- G. 指挥室抽屉开关（.drawer-toggle）：贴右缘的金属竖键 -------------- */
+html body .drawer-toggle {
+  background:
+    var(--hw-brush),
+    linear-gradient(90deg, #2b353d 0%, #171d23 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-right: 0 !important;
+  border-left: 3px solid var(--hw-brass-dim) !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    -2px 0 10px rgba(0, 0, 0, 0.55) !important;
+  color: var(--hw-steel-hi) !important;
+}
+html body .drawer-toggle:hover,
+html body .drawer-toggle[aria-pressed="true"] {
+  background:
+    var(--hw-brush),
+    linear-gradient(90deg, #4a3f28 0%, #2a2416 100%) !important;
+  border-left-color: var(--hw-brass) !important;
+  color: #e8cd8e !important;
+}
+
+/* ---- H. 地图图例（.map-legend）：底部装甲带右端的一小簇 ---------------- */
+html body .map-legend {
+  color: var(--hw-steel-lt) !important;
+}
+html body .map-legend span {
+  color: var(--hw-steel-lt) !important;
+}
+/* ★ 图例色块必须与地图实际颜色一致（这是功能色，不能只图好看）。
+   地图上的移动范围是 rg/122,224,168 半透明铺在绿地/路面上，
+   折算到深底上约等于 #6fc396；攻击目标同理约 #d76a50；
+   已行动是冷灰 #899492。这里改成实心块但压一档饱和度，
+   免得那一小块纯色比整个底栏还抢眼。 */
+html body .map-legend .legend-square.move,
+html body .legend-square.move {
+  background: #62b189 !important;
+  border-color: rgba(0, 0, 0, 0.5) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+}
+html body .map-legend .legend-square.attack,
+html body .legend-square.attack {
+  background: #c4604a !important;
+  border-color: rgba(0, 0, 0, 0.5) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+}
+html body .map-legend .legend-square.spent,
+html body .legend-square.spent {
+  background: #78837f !important;
+  border-color: rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ---- I. 顶栏：战内也要一致（顶栏在第一轮已改，这里补按钮态）----------- */
+html body header.topbar .help-button,
+html body header.topbar .sound-button,
+html body header.topbar .nav-label,
+html body header.topbar .version-label {
+  border-color: var(--hw-ink-0) !important;
+}
+
+/* ---- J. 交战舞台（combat-stage）：弹出来的那块战斗动画框 -------------- */
+html body .combat-stage {
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #1b232a 0%, #0e1317 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-top: 3px solid var(--hw-brass-dim) !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 4px 0 rgba(0, 0, 0, 0.6),
+    0 18px 44px rgba(0, 0, 0, 0.7) !important;
+  color: var(--hw-steel-lt) !important;
+}
+html body .combat-stage-head span {
+  color: var(--hw-brass) !important;
+  letter-spacing: 1.6px !important;
+}
+html body .combat-stage-head button {
+  background: linear-gradient(180deg, #2b353d 0%, #1a2128 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-radius: 0 !important;
+  color: var(--hw-steel-hi) !important;
+}
+html body .combat-caption {
+  color: var(--hw-steel-lt) !important;
+}
+
+/* ---- K. 回合横幅（turn-banner）：屏幕中央那条「红方回合」 ------------- */
+html body .turn-banner {
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, rgba(34, 43, 51, 0.96), rgba(16, 22, 26, 0.96)) !important;
+  border-top: 2px solid var(--hw-brass-dim) !important;
+  border-bottom: 2px solid var(--hw-ink-0) !important;
+  color: var(--hw-paper) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 6px 26px rgba(0, 0, 0, 0.65) !important;
+}
+
+/* ---- H2. 指挥室抽屉里的两块面板（指挥官 / 战况电台）-------------------
+   ★ 这两块一直被 `.command-sidebar .panel`（style.css，2 个类）压着：
+     它设了 `backdrop-filter: blur(14px)` 和 `rgba(14,24,28,.78)` 半透明底。
+     我前面的 §7 用的是单类选择器，**权重输给它**，所以那两块一直没变。
+     用 CSS.getMatchedStylesForNode 查出来才定位到。
+     这里用 `html body` + 双类把它压过去，并给足金属材质。 */
+html body .command-sidebar .commander-panel,
+html body .command-sidebar .log-panel,
+html body .command-sidebar .selection-panel,
+html body .command-sidebar .panel {
+  background:
+    var(--hw-brush),
+    linear-gradient(168deg, #232c34 0%, #161d23 55%, #10161a 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-top: 3px solid var(--hw-brass-dim) !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 4px 0 rgba(0, 0, 0, 0.6),
+    0 18px 40px rgba(0, 0, 0, 0.68) !important;
+  /* 关掉毛玻璃：它既是"网页语言"，也会给 fixed 后代建包含块 */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: var(--hw-steel-lt) !important;
+}
+/* 面板标题带（.panel-heading）：从青绿底改军械黄细带 */
+html body .command-sidebar .panel-heading,
+html body .command-sidebar .log-panel .panel-heading,
+html body .command-sidebar .commander-panel .panel-heading {
+  background: linear-gradient(180deg, rgba(200, 165, 90, 0.16), rgba(200, 165, 90, 0.04)) !important;
+  border-bottom: 1px solid rgba(200, 165, 90, 0.3) !important;
+  border-radius: 0 !important;
+}
+html body .command-sidebar .panel-heading h2 {
+  color: var(--hw-paper) !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8) !important;
+}
+/* 「◉ LIVE」电台标：从青绿 → 军械黄 */
+html body .command-sidebar .radio-icon {
+  color: var(--hw-brass) !important;
+}
+html body .command-sidebar .panel-heading .radio-icon {
+  color: var(--hw-brass) !important;
+}
+/* 指挥官面板内部文字 */
+html body .command-sidebar .commander-panel h2,
+html body .command-sidebar #co-name {
+  color: var(--hw-paper) !important;
+}
+html body .command-sidebar .commander-panel .eyebrow,
+html body .command-sidebar .commander-panel small {
+  color: var(--hw-steel) !important;
+}
+html body .command-sidebar .commander-panel .funds strong {
+  color: var(--hw-brass) !important;
+}
+html body .command-sidebar .commander-avatar {
+  background: linear-gradient(180deg, #3a3120, #1e1a12) !important;
+  border: 1px solid var(--hw-brass-dim) !important;
+  border-radius: 0 !important;
+  color: var(--hw-brass) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 235, 190, 0.18) !important;
+}
+/* 战况电台列表 */
+html body .command-sidebar .log-panel ol,
+html body .command-sidebar #event-log {
+  background: none !important;
+  color: var(--hw-steel-lt) !important;
+}
+html body .command-sidebar #event-log li {
+  border-bottom: 1px solid rgba(200, 214, 222, 0.08) !important;
+  color: var(--hw-steel-lt) !important;
+}
+html body .command-sidebar #event-log li:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.018) !important;
+}
+
+/* ---- L. 指令菜单（.command-list，浮在地图上的那圈按钮）-----------------
+   ★ 又一次选择器踩坑，记下来：
+     我第一轮写的是 `.command-menu` —— **DOM 里根本没有这个类**。
+     真实结构是 `#command-menu-host > .command-list`，而 **.command-list 本身
+     就是那个浮层**（它自己 position:fixed + padding + 底 + 边框），
+     外面没有包裹盒子。所以规则要挂在 `.command-list` 上。 */
+html body #command-menu-host .command-list,
+html body .command-list {
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #232c34 0%, #141a1f 100%) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-top: 2px solid var(--hw-brass-dim) !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 4px 0 rgba(0, 0, 0, 0.6),
+    0 16px 38px rgba(0, 0, 0, 0.7) !important;
+}
+
+/* 菜单项：全宽金属横条（照 AW 的「通栏 + 暗缝」语法，不是悬浮胶囊） */
+html body .command-list button {
+  background: linear-gradient(180deg, rgba(58, 71, 80, 0.55), rgba(26, 34, 41, 0.55)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-radius: 0 !important;
+  color: var(--hw-steel-hi) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease !important;
+}
+html body .command-list button:hover,
+html body .command-list button:focus-visible {
+  background: linear-gradient(180deg, rgba(200, 165, 90, 0.2), rgba(200, 165, 90, 0.07)) !important;
+  border-color: rgba(200, 165, 90, 0.5) !important;
+  color: var(--hw-paper) !important;
+}
+/* ▶ 指针跟着换成军械黄 */
+html body .command-list button:before {
+  color: var(--hw-brass) !important;
+}
+
+/* ★ 攻击指令：唯一的红色警示项。AW 用高饱和红，这里压成"暗红漆金属"
+   —— 保留警示强度，但与冷灰调统一。 */
+html body .command-list button[data-command="attack"],
+html body .command-list button.attack-command {
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #58271f 0%, #3a1a15 100%) !important;
+  border-color: rgba(196, 96, 72, 0.55) !important;
+  color: #f0c3b2 !important;
+}
+html body .command-list button[data-command="attack"]:hover,
+html body .command-list button.attack-command:hover:not(:disabled) {
+  filter: brightness(1.22) !important;
+  border-color: rgba(255, 160, 130, 0.8) !important;
+  color: #ffe0d2 !important;
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #7a3428 0%, #4d221b 100%) !important;
+}
+html body .command-list button[disabled] {
+  opacity: 0.42 !important;
+  filter: grayscale(0.4) !important;
+}
+
+/* ---- M. 能量槽（.energy-track）：抽屉里的指挥能量 --------------------- */
+html body .energy-track {
+  background: linear-gradient(180deg, #070b0d, #12181c) !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  border-radius: 0 !important;
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.85),
+    0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+html body .energy-track > i,
+html body .energy-track #energy-fill {
+  border-radius: 0 !important;
+  background:
+    var(--hw-brush),
+    linear-gradient(180deg, #d8b970, #8a7139) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 250, 230, 0.3),
+    0 0 10px rgba(200, 165, 90, 0.3) !important;
+}
+html body .power-button {
+  border-radius: 0 !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  background: linear-gradient(180deg, #2b353d 0%, #1a2128 100%) !important;
+  color: var(--hw-steel-hi) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 2px 0 rgba(0, 0, 0, 0.6) !important;
+}
+html body .power-button:hover:not([disabled]) {
+  filter: brightness(1.28) !important;
+  color: var(--hw-paper) !important;
+  border-color: var(--hw-brass-dim) !important;
+}
+html body .power-button[disabled] {
+  opacity: 0.5 !important;
+}
+
+/* ============================================================
+   F6 · 兵种立绘（部队生产面板）
+   素材：Sketchfab 按点赞数扒取的高赞写实模型渲染图，
+   版权记录在 media/units/CREDITS.json（全部 CC 许可）。
+   ============================================================ */
+html body .build-symbol.unit-portrait {
+  width: 46px !important;
+  height: 46px !important;
+  border-radius: 3px !important;
+  border: 1px solid var(--hw-ink-0) !important;
+  background: #10151a !important;
+  /* 斜切面金属相框：上亮下暗 + 厚度 + 落影 */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 2px 0 rgba(0, 0, 0, 0.55),
+    0 3px 6px rgba(0, 0, 0, 0.45) !important;
+  filter: saturate(0.9) contrast(1.04) brightness(0.94);
+  transition: filter 0.12s ease, border-color 0.12s ease;
+}
+html body .build-option:hover:not([disabled]) .build-symbol.unit-portrait {
+  filter: saturate(1.05) contrast(1.06) brightness(1.12);
+  border-color: var(--hw-brass-dim) !important;
+}
+html body .build-option[disabled] .build-symbol.unit-portrait {
+  filter: grayscale(0.75) brightness(0.55);
+}

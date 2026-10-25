@@ -1,0 +1,944 @@
+/* ==========================================================================
+   高级战争 · 界面语言层  （AW UI LANGUAGE）
+   --------------------------------------------------------------------------
+   这不是"参考风格"，是**按实测规格复刻**。所有色值来自 PIL 逐像素采样：
+     _aw/advance-wars-master/docs/DoR-FieldMenu.png     ← 战斗内菜单
+     _aw/advance-wars-master/docs/DoR-CoInfo-Top.png    ← 标题带 + 信息框
+     _aw/advance-wars-master/docs/AW2-FieldMenu.png     ← 第二套色板（对照）
+     _aw/advance-wars-master/build/assets/font-*.xml    ← 字体度量
+
+   ★ 版权说明（写在这里，免得以后忘）：
+     采样的是**色值、比例、几何、字距**——这些是"视觉语言"，不受版权保护。
+     一个像素的任天堂位图都没有拷进来。所有边框/底纹/字效都是 CSS 现画的。
+
+   ★ 加载顺序：必须在 style.css **之后**（见 index.html）。
+     回退方式：删掉 index.html 里那一行 <link>，界面立刻回到 F1/F2/F3 形态。
+
+   --------------------------------------------------------------------------
+   实测到的五条 AW 版式语法（这才是"像不像"的决定因素）
+   --------------------------------------------------------------------------
+   1. 【深底 + 亮边】每一个元素都是 深色底 + 1px 亮边 + 2px 硬黑外描边。
+      没有圆角、没有柔和阴影。我们的 8px 圆角 + 0 8px 24px rgba(0,0,0,.3)
+      是"网页"的语言，跟它完全相反。
+   2. 【单一强调色】DoR 全界面只有一个高饱和色 rgb(0,255,197) 亮青绿，
+      只用在"选中/可交互"。其余全是低饱和蓝灰。
+   3. 【通栏横条】菜单项是整宽横条 + 项间 2px 暗缝，不是悬浮胶囊卡片。
+   4. 【描边字】大标题靠"硬黑描边"立起来，不是靠 font-weight。
+      实测所有位图字体 lineHeight === size —— 行高等于字号，完全没有行距。
+   5. 【底部说明栏】AW 菜单底下永远有一条独立的浅蓝灰说明条，
+      实时解释当前选中项。——我们的 .landing-bottom / 侧栏提示正好对应。
+   ========================================================================== */
+
+/* ---- 0. 色板：直接改写 style.css 的 token -------------------------------
+      这是最大的一根杠杆：--panel/--line/--muted 被全站引用，
+      换掉它们，大半的界面会同时切换语言。                                  */
+
+:root {
+  /* AW 实测色 */
+  --aw-cyan: rgb(0, 255, 197); /* 选中 / 可交互（灵魂色） */
+  --aw-cyan-dim: rgb(25, 113, 99); /* 选中项填充 */
+  --aw-panel: rgb(41, 65, 74); /* 面板底 */
+  --aw-item: rgb(74, 89, 107); /* 菜单项底 */
+  --aw-item-dark: rgb(33, 40, 41); /* 次级项底 */
+  --aw-desc: rgb(107, 121, 148); /* 说明栏底 */
+  --aw-ink: #ffffff;
+  --aw-outline: #000000; /* 硬黑描边 */
+  --aw-black: #050d0c; /* 战场外的世界 */
+
+  /* 覆盖全站 token —— 注意 --accent 从橙改为青：
+     橙保留给品牌（logo 色块），青色接管"能点/已选"。 */
+  --bg: var(--aw-black);
+  --panel: var(--aw-panel);
+  --panel2: var(--aw-item);
+  --line: rgba(0, 255, 197, 0.34);
+  --text: var(--aw-ink);
+  --muted: rgb(158, 176, 190);
+  --accent: var(--aw-cyan);
+
+  /* ★ 像素字体栈：等宽 + tabular 数字。
+     CJK 部分仍是系统黑体（没有可自由分发的 CJK 点阵字体时只能这样），
+     但数字/拉丁全部走等宽，观感立刻"游戏化"。 */
+  --aw-font-num: ui-monospace, "SFMono-Regular", Consolas, "Courier New", monospace;
+}
+
+/* ---- 1. 底色：深青黑 + 极细斜纹（AW 的装饰语言） ---------------------- */
+
+body {
+  background-color: var(--aw-black);
+  background-image:
+    repeating-linear-gradient(
+      135deg,
+      transparent 0 7px,
+      rgba(0, 255, 197, 0.022) 7px 8px
+    ),
+    radial-gradient(120% 90% at 50% 0%, rgba(41, 65, 74, 0.55), transparent 70%);
+  color: var(--aw-ink);
+}
+
+/* ---- 2. 顶栏 → AW 标题带 ------------------------------------------------
+      参考 DoR-CoInfo-Top：左侧色块徽章 + 番号，右侧斜纹填满空白，
+      底部一条 1px 亮线收口。                                              */
+
+.topbar {
+  background: var(--aw-panel) !important;
+  border-bottom: 1px solid var(--aw-cyan) !important;
+  box-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.85),
+    0 3px 0 rgba(0, 255, 197, 0.16) !important;
+  backdrop-filter: none !important;
+  position: relative;
+}
+
+/* 右侧斜纹装饰（参考里用来填满标题带空白的图形语言） */
+.topbar:after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 1px;
+  width: 190px;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    115deg,
+    transparent 0 5px,
+    rgba(0, 255, 197, 0.13) 5px 7px
+  );
+  -webkit-mask-image: linear-gradient(to left, #000 20%, transparent);
+  mask-image: linear-gradient(to left, #000 20%, transparent);
+}
+
+.brand,
+.icon-button,
+.help-button {
+  border-radius: 0 !important;
+}
+
+.brand-mark i {
+  background: var(--aw-cyan) !important;
+}
+
+.brand span {
+  color: var(--aw-ink);
+  text-shadow: 0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000;
+}
+
+.brand small,
+.nav-label,
+.version-label {
+  font-family: var(--aw-font-num);
+  letter-spacing: 0.12em;
+  color: var(--aw-cyan) !important;
+  opacity: 0.75;
+}
+
+/* ---- 3. 大标题 → 描边字（AW 的立字方式，不靠字重） -------------------- */
+
+.landing h1 {
+  color: var(--aw-ink) !important;
+  text-shadow:
+    0 2px 0 var(--aw-outline),
+    0 -2px 0 var(--aw-outline),
+    2px 0 0 var(--aw-outline),
+    -2px 0 0 var(--aw-outline),
+    1px 2px 0 var(--aw-outline),
+    -1px 2px 0 var(--aw-outline),
+    1px -2px 0 var(--aw-outline),
+    -1px -2px 0 var(--aw-outline),
+    0 5px 0 rgba(0, 0, 0, 0.55) !important;
+  letter-spacing: 0.01em;
+}
+
+/* 第二行用青色（= AW 的"强调"，替代原来的橙） */
+.landing h1 span {
+  color: var(--aw-cyan) !important;
+  -webkit-text-fill-color: var(--aw-cyan) !important;
+  background: none !important;
+}
+
+.eyebrow {
+  font-family: var(--aw-font-num);
+  color: var(--aw-cyan) !important;
+  letter-spacing: 0.2em !important;
+}
+.small-cross {
+  color: var(--aw-cyan) !important;
+}
+
+.landing p.intro {
+  color: rgb(178, 195, 206) !important;
+}
+
+/* ---- 4. 按钮 → AW 通栏菜单条 -------------------------------------------
+      参考 DoR-FieldMenu：整宽横条，项间 2px 暗缝，选中态
+      = 青色边 + 深青填充 + 青色文字。                                      */
+
+.button,
+.resume-button {
+  border-radius: 0 !important;
+  background: var(--aw-item) !important;
+  border: 1px solid rgba(0, 0, 0, 0.85) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 3px 0 rgba(0, 0, 0, 0.55) !important;
+  color: var(--aw-ink) !important;
+  font-family: var(--aw-font-num);
+  letter-spacing: 0.04em;
+  transition: none;
+}
+
+.button:hover,
+.resume-button:hover {
+  background: var(--aw-cyan-dim) !important;
+  box-shadow:
+    inset 0 0 0 1px var(--aw-cyan),
+    0 3px 0 rgba(0, 0, 0, 0.55) !important;
+  color: var(--aw-cyan) !important;
+}
+
+.button.primary {
+  background: var(--aw-cyan-dim) !important;
+  box-shadow:
+    inset 0 0 0 1px var(--aw-cyan),
+    0 3px 0 rgba(0, 0, 0, 0.55) !important;
+  color: var(--aw-cyan) !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.7);
+}
+.button.primary:hover {
+  background: var(--aw-cyan) !important;
+  color: #03231d !important;
+}
+.button.primary small {
+  color: inherit !important;
+  opacity: 0.75;
+}
+
+/* ---- 5. 信息框 → 深底 + 亮边 + 硬黑外描边 ----------------------------- */
+
+.hero-panel,
+.panel,
+.selection-panel,
+.commander-panel,
+.log-panel {
+  border-radius: 0 !important;
+  background: var(--aw-panel) !important;
+  border: 1px solid var(--aw-cyan) !important;
+  box-shadow:
+    0 0 0 2px var(--aw-outline),
+    0 6px 0 rgba(0, 0, 0, 0.5) !important;
+}
+
+.hero-panel .panel-heading,
+.panel-heading {
+  background: var(--aw-cyan-dim) !important;
+  border-bottom: 1px solid var(--aw-cyan) !important;
+  border-radius: 0 !important;
+}
+
+.panel-heading h2,
+.hero-map-name {
+  color: var(--aw-ink) !important;
+  text-shadow: 0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000 !important;
+}
+
+.orange-tag,
+.coordinates {
+  font-family: var(--aw-font-num) !important;
+  letter-spacing: 0.14em !important;
+}
+.orange-tag {
+  color: #04241e !important;
+  background: var(--aw-cyan) !important;
+  border-radius: 0 !important;
+  padding: 1px 5px !important;
+}
+.coordinates {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+/* 地图内嵌框：1px 黑 + 内 1px 亮（对齐 AW 的地图边框） */
+.hero-canvas-wrap {
+  border-radius: 0 !important;
+  background: #06120f !important;
+  border: 1px solid rgba(0, 0, 0, 0.9) !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 255, 197, 0.22) !important;
+  padding: 3px !important;
+}
+.hero-canvas-wrap canvas {
+  border-radius: 0 !important;
+  image-rendering: pixelated;
+}
+.hero-map-corner {
+  border-radius: 0 !important;
+  border-color: var(--aw-cyan) !important;
+}
+
+/* ---- 6. 底部说明栏 → AW 的浅蓝灰说明条（实测 rgb(107,121,148)） ------- */
+
+.landing-bottom {
+  background: var(--aw-desc) !important;
+  border-top: 1px solid var(--aw-cyan) !important;
+  box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.6) !important;
+  border-radius: 0 !important;
+  color: #0a1519 !important;
+  font-family: var(--aw-font-num);
+  letter-spacing: 0.06em;
+}
+.landing-bottom span {
+  color: #0a1519 !important;
+}
+.landing-bottom span:last-child {
+  color: #0a1519 !important;
+  opacity: 0.72;
+}
+
+/* ---- 7. 数字与统计：等宽 + 描边（HUD 观感） --------------------------- */
+
+.feature-stats strong,
+.hero-badge,
+.hero-unit strong,
+#hero-detail-title {
+  font-family: var(--aw-font-num);
+  font-variant-numeric: tabular-nums;
+}
+.feature-stats strong {
+  color: var(--aw-cyan) !important;
+  text-shadow: 0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000 !important;
+}
+.feature-stats span {
+  color: rgb(158, 176, 190) !important;
+  letter-spacing: 0.1em;
+}
+.feature-stats > div {
+  border-radius: 0 !important;
+  border-left: 2px solid var(--aw-cyan) !important;
+}
+
+/* ---- 8. 角标 / 圆点 / 徽章一律去圆角 ---------------------------------- */
+
+.tiny-dot,
+.hero-badge,
+.mini-tank {
+  border-radius: 0 !important;
+}
+.tiny-dot,
+.hero-badge .tiny-dot {
+  background: var(--aw-cyan) !important;
+  box-shadow: 0 0 0 1px #000 !important;
+}
+
+/* ---- 9. 全屏：主页也必须铺满视口，不出现"网页滚动" -------------------- */
+
+.screen.landing {
+  min-height: calc(100vh - 44px);
+}
+
+/* ---- 10. 战斗页：把 F3 覆盖层的面板也拉进同一套语言 ------------------- */
+
+.battle-header {
+  background: var(--aw-panel) !important;
+  border-bottom: 1px solid var(--aw-cyan) !important;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.85) !important;
+  backdrop-filter: none !important;
+}
+
+.battlefield-toolbar,
+.map-legend {
+  border-radius: 0 !important;
+  background: rgba(41, 65, 74, 0.92) !important;
+  border: 1px solid rgba(0, 255, 197, 0.4) !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.9) !important;
+  font-family: var(--aw-font-num);
+}
+
+.player-strip {
+  border-radius: 0 !important;
+  background: rgba(41, 65, 74, 0.94) !important;
+  border: 1px solid var(--aw-cyan) !important;
+  box-shadow: 0 0 0 2px var(--aw-outline) !important;
+  backdrop-filter: none !important;
+  font-family: var(--aw-font-num);
+}
+
+.energy-track {
+  border-radius: 0 !important;
+  background: #04100e !important;
+  border: 1px solid rgba(0, 0, 0, 0.9) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.energy-track > i {
+  border-radius: 0 !important;
+  background: var(--aw-cyan) !important;
+}
+
+/* 战斗内所有小面板统一去圆角 */
+.commander-avatar,
+.radio-icon,
+.power-button,
+.log-panel,
+.selection-panel,
+.player-card {
+  border-radius: 0 !important;
+}
+
+/* ==========================================================================
+   F4-b · 主页改成「地图铺满 + UI 浮在上面」
+   --------------------------------------------------------------------------
+   依据：实测 docs/compare.png —— 高级战争的界面里 **100% 是地图**，
+   UI 只占两个极小角落。主页也应该这样，而不是"左文右卡"的网页版式。
+
+   ★ 注意：主页的地图是**装饰性预览**，没有点击需求，
+     所以这里可以放心用 cover 裁切（战斗页不行——那里必须 contain，见 F3）。
+   ========================================================================== */
+
+/* 页面本体不再滚动 */
+body:has(#landing:not(.hidden)) {
+  overflow: hidden;
+}
+
+.screen.landing {
+  position: relative;
+  height: calc(100vh - 44px);
+  min-height: 0;
+  overflow: hidden;
+  display: block;
+}
+
+/* ---- 地图：铺满整个视口，当背景板 ---------------------------------- */
+
+.hero-panel {
+  position: fixed !important;
+  top: 44px !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  z-index: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: var(--aw-black) !important;
+  overflow: hidden;
+}
+
+.hero-panel .hero-canvas-wrap {
+  position: absolute !important;
+  inset: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: none !important;
+  /* 镜头推近后画布会溢出，必须裁掉 */
+  overflow: hidden !important;
+}
+
+/* ★ 镜头（F5）：把 18×14 的全图塞进屏幕时，一格只有 78px，
+   坦克小得看不出在打什么；「循环战争」的分量全丢了。
+   所以按 2 倍推近，对准地图正中的桥头（战斗发生地）。
+   换算过程：canvas 内容 720×560 经 cover(×1.953) 显示，桥头格(9,3)
+   落在元素坐标 (742,104)；以中心为原点放大 2 倍后再平移 (-0.6%,62%)，
+   它正好落在视口的 (55%,40%) —— 避开左侧文字区。
+   可见范围约格 x4.5–13.5 / y1.6–6.4，刚好框住红蓝两军的全部参战单位。
+
+   ★ 为什么用 transform 而不是重画：渲染器的坐标换算读的是
+   getBoundingClientRect()，它返回的是**变换之后**的视觉矩形，
+   所以 cover 的比例与偏移会自动跟着变——点击命中不需要额外修正。 */
+.hero-panel .hero-canvas-wrap canvas {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: 58% 50% !important;
+  image-rendering: pixelated;
+  transform: translate(-0.6%, 62%) scale(2) !important;
+  transform-origin: 50% 50% !important;
+}
+
+/* 角饰挪到视口四角 */
+.hero-panel .hero-map-corner {
+  position: fixed !important;
+  z-index: 2;
+}
+.hero-panel .hero-map-corner.top-left { top: 56px !important; left: 14px !important; }
+.hero-panel .hero-map-corner.bottom-right { bottom: 52px !important; right: 14px !important; }
+
+/* 左侧压一层暗角，保证文字可读（AW 也这么干） */
+.hero-panel:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(100deg, rgba(5, 13, 12, 0.94) 0%, rgba(5, 13, 12, 0.72) 34%, rgba(5, 13, 12, 0.06) 62%, transparent 78%),
+    linear-gradient(to bottom, rgba(5, 13, 12, 0.5) 0%, transparent 22%, transparent 74%, rgba(5, 13, 12, 0.72) 100%);
+}
+
+/* ---- 标题带：浮在地图顶部（参考 DoR-CoInfo-Top 的标题带） ---------- */
+
+.hero-panel .panel-heading {
+  position: fixed !important;
+  top: 44px !important;
+  left: 0 !important;
+  right: 0 !important;
+  z-index: 12;
+  height: 30px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 14px !important;
+  background: linear-gradient(to bottom, rgba(41, 65, 74, 0.95), rgba(41, 65, 74, 0.55)) !important;
+  border-bottom: 1px solid var(--aw-cyan) !important;
+  border-top: 0 !important;
+}
+
+/* ---- 战场说明条：贴底浮层（= AW 的底部说明栏） ---------------------- */
+
+.hero-panel .hero-bottom {
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  z-index: 13;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 7px 14px !important;
+  background: var(--aw-desc) !important;
+  border-top: 1px solid var(--aw-cyan) !important;
+  box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.6) !important;
+  color: #0a1519 !important;
+}
+.hero-panel .hero-bottom strong,
+.hero-panel .hero-bottom span {
+  color: #0a1519 !important;
+}
+.hero-panel .hero-badge {
+  background: rgba(5, 13, 12, 0.85) !important;
+  border: 1px solid var(--aw-cyan) !important;
+  color: var(--aw-cyan) !important;
+  padding: 2px 7px !important;
+}
+.hero-panel .hero-badge span { color: var(--aw-cyan) !important; }
+.hero-panel .mini-tank { color: #0a1519 !important; }
+
+/* 原来右下角的小字说明不再需要（信息已进底栏） */
+.hero-panel .field-caption { display: none !important; }
+
+/* ---- 浮在地图左侧的文案区 ------------------------------------------ */
+
+.landing-copy {
+  position: relative;
+  z-index: 10;
+  max-width: 560px;
+  padding: 0 0 0 46px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: calc(100vh - 44px - 30px);
+  box-sizing: border-box;
+}
+
+/* 标题直接压在地图上（AW 的标题就是描边字，不套框） */
+.landing h1 {
+  font-size: clamp(34px, 3.6vw, 52px) !important;
+  margin: 14px 0 12px !important;
+}
+
+.landing p.intro {
+  font-size: 12px !important;
+  line-height: 1.75 !important;
+  color: rgb(186, 202, 212) !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  max-width: 330px;
+}
+
+/* 按钮组套一层 AW 面板 */
+.landing-actions {
+  margin-top: 20px !important;
+  padding: 12px !important;
+  background: rgba(41, 65, 74, 0.93) !important;
+  border: 1px solid var(--aw-cyan) !important;
+  box-shadow: 0 0 0 2px var(--aw-outline), 0 6px 0 rgba(0, 0, 0, 0.45) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  max-width: 330px;
+}
+
+.landing-actions .action-pair {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 2px !important;
+  margin-top: 2px;
+}
+
+/* 统计条浮在按钮下方，左青色竖线 */
+.feature-stats {
+  margin-top: 18px !important;
+  display: flex !important;
+  gap: 0 !important;
+  max-width: 330px;
+}
+.feature-stats > div {
+  flex: 1;
+  padding: 4px 0 4px 10px !important;
+  border-left: 2px solid var(--aw-cyan) !important;
+  border-radius: 0 !important;
+  background: rgba(5, 13, 12, 0.5);
+  margin-right: 2px;
+}
+.feature-stats strong { font-size: 20px !important; }
+.landing-note {
+  display: none !important;
+}
+
+/* 底部这条是"网页页脚"，主页已经全屏了，去掉 */
+.landing-bottom { display: none !important; }
+
+/* 小屏兜底：文案区不再绝对定位挤压 */
+@media (max-width: 820px) {
+  .landing-copy {
+    height: auto;
+    padding: 20px 18px 140px;
+    justify-content: flex-start;
+  }
+  .hero-panel:after {
+    background: linear-gradient(to bottom, rgba(5, 13, 12, 0.9) 0%, rgba(5, 13, 12, 0.8) 55%, rgba(5, 13, 12, 0.35) 100%);
+  }
+}
+
+/* ==========================================================================
+   F4-c · 顶栏尺寸系统修正
+   --------------------------------------------------------------------------
+   问题：base 里 .topbar 是 height:96px + margin:0 4.2%（左右留白），
+   .nav-label 用 padding:37px 0 撑高、.top-context 是 gap:32px。
+   那是「网页导航栏」的尺寸系统——一条 96px 的横栏加左右留白。
+   所以 F4 一改背景色，文字就撞在一起了。
+
+   修正：顶栏压到 48px，去左右留白，全宽贴边，所有 padding/gap 重算。
+   这条顶栏就是 AW 的「标题带」——通栏、扁平、底部一条亮线收口。
+   ========================================================================== */
+
+.topbar {
+  height: 48px !important;
+  margin: 0 !important;
+  padding: 0 16px !important;
+  gap: 16px !important;
+  align-items: center !important;
+  overflow: hidden;
+}
+
+.brand {
+  font-size: 15px !important;
+  letter-spacing: 0.06em !important;
+  gap: 8px !important;
+  flex: 0 0 auto;
+}
+.brand small {
+  font-size: 7px !important;
+  letter-spacing: 0.14em !important;
+  margin-top: 1px !important;
+}
+.brand-mark {
+  width: 22px !important;
+  height: 22px !important;
+  gap: 3px !important;
+}
+.brand-mark i {
+  height: 4px !important;
+}
+.brand-mark i:nth-child(2) { width: 16px !important; }
+.brand-mark i:nth-child(3) { width: 10px !important; }
+
+/* 导航文字：去掉 37px 的撑高，改成扁平小字 */
+.top-context {
+  gap: 10px !important;
+  margin-left: 14px !important;
+  flex: 0 1 auto !important;
+  display: flex !important;
+  align-items: center !important;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.nav-label {
+  font-size: 10px !important;
+  padding: 0 !important;
+  border-bottom: 0 !important;
+  color: var(--aw-cyan) !important;
+  white-space: nowrap;
+  text-shadow: none !important;
+}
+.version-label {
+  font-size: 8px !important;
+  letter-spacing: 0.16em !important;
+  white-space: nowrap;
+}
+
+.top-actions {
+  gap: 12px !important;
+  flex: 0 0 auto;
+}
+.network-status { font-size: 9px !important; gap: 5px !important; }
+.icon-button {
+  height: 22px !important;
+  min-width: 22px !important;
+  font-size: 12px !important;
+}
+.sound-slash { top: 2px !important; left: 8px !important; font-size: 11px !important; }
+.help-button { font-size: 10px !important; }
+.help-button span { margin-left: 6px !important; }
+
+/* 顶栏收窄后，所有以 44px 为基准的定位统一改到 48px */
+.hero-panel { top: 48px !important; }
+.hero-panel .panel-heading { top: 48px !important; }
+.screen.landing { height: calc(100vh - 48px) !important; }
+.landing-copy { height: calc(100vh - 48px - 30px) !important; }
+.hero-panel .hero-map-corner.top-left { top: 60px !important; }
+
+/* 战斗页：顶栏 48px 之上再叠一条 38px 的战况带（浮在地图上，不另占版面） */
+.battle-header {
+  top: 48px !important;
+  height: 38px !important;
+  background: linear-gradient(to bottom, rgba(41, 65, 74, 0.96), rgba(41, 65, 74, 0.5)) !important;
+  border-bottom: 1px solid rgba(0, 255, 197, 0.5) !important;
+  box-shadow: none !important;
+  align-items: center !important;
+}
+.battle-turn strong { font-size: 20px !important; }
+.mission-title h1 { font-size: 11px !important; }
+.battlefield-toolbar { top: 92px !important; }
+
+/* ---- 封面「循环战争」的影像层（F5）----------------------------------
+   坦克推进、开火姿态、爆炸、装甲殉爆全部由渲染器画在 canvas 上；
+   这三层只负责镜头语言：炮火闪光、硝烟、以及一层几乎察觉不到的扫描线。
+   flash / smoke 的强度由 hero-cinematic.mjs 的时间轴每帧写进 opacity，
+   这里不写死任何数值——时间轴才是唯一的事实来源。
+
+   层级：canvas(auto) < 暗角(1) < 本层(2) < 标题带(12)。
+   硝烟压在暗角之上是刻意的：炮火覆盖时就该盖住一切，标题带仍浮在最上。 */
+.hero-cinematic {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 2 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
+.hero-cinematic > div {
+  position: absolute !important;
+  inset: 0 !important;
+}
+#hero-flash,
+#hero-smoke {
+  opacity: 0;
+}
+/* 炮火闪光：屏幕级过曝。用 screen 混合，避免把画面整体压灰。 */
+#hero-flash {
+  mix-blend-mode: screen !important;
+  background:
+    radial-gradient(
+      52% 46% at 50% 52%,
+      rgba(255, 246, 220, 0.72),
+      rgba(255, 206, 140, 0.22) 58%,
+      transparent 78%
+    ),
+    linear-gradient(rgba(255, 232, 190, 0.16), rgba(255, 232, 190, 0.16)) !important;
+}
+/* 硝烟：末段涨满，把重置那一帧彻底盖住——这是循环无缝的技术保证。
+   最下面那层底色必须接近不透明，否则会在最浓的瞬间透出「部队瞬移」。 */
+#hero-smoke {
+  background:
+    radial-gradient(
+      58% 52% at 26% 64%,
+      rgba(232, 238, 241, 0.95),
+      transparent 72%
+    ),
+    radial-gradient(
+      54% 46% at 74% 32%,
+      rgba(206, 214, 219, 0.92),
+      transparent 74%
+    ),
+    radial-gradient(
+      86% 66% at 52% 82%,
+      rgba(190, 199, 206, 0.94),
+      transparent 72%
+    ),
+    rgba(186, 196, 203, 0.96) !important;
+}
+/* 极淡的扫描线：只为了不像「一张静态图」，强度压到几乎看不见。 */
+.hero-scan {
+  opacity: 0.5 !important;
+  mix-blend-mode: overlay !important;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.05) 0 1px,
+    rgba(0, 0, 0, 0.05) 1px 3px
+  ) !important;
+}
+
+/* ==========================================================================
+   F5-film · 封面写实电影感背景板
+   --------------------------------------------------------------------------
+   把原来"铺满全屏的像素战场"替成一段**写实循环战争素材**，
+   标题与按钮仍按 F4-b 的方式浮在上面，左侧暗角沿用 .hero-panel:after。
+
+   为什么用 <video> 而不是继续用 canvas 演：
+     要的是「写实 + 电影感」，而渲染器画的是像素美术，两者不是一个体系，
+     没法靠调参把像素画变写实。所以这一层直接换成实拍素材。
+
+   循环是否无缝：素材取自原片首尾画面状态最接近的 10 秒区间
+     （6.75s→16.75s，灰度差 25.69 为全片最低），因此硬切回开头看不出接缝。
+     —— 这一点很重要：这批素材**没有一支是天然无缝的**，
+        如果随便截一段来循环，接缝会非常明显。
+
+   版权：Mixkit Restricted License（仅限个人 / 非商业用途）。
+        素材 id 23049 "Soldiers walking in the forest"。
+        若要商用，替换 public/media/intro-loop.mp4 为自有素材即可，代码不用动。
+   ========================================================================== */
+
+/* 像素 canvas 在这一模式下线，避免和视频两层动态画面互相打架 */
+.hero-panel .hero-canvas-wrap canvas#hero-canvas {
+  display: none !important;
+}
+
+.intro-video {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  /* 视线重心略偏右，给左侧文案区让位（和原 canvas 的 58% 呼应） */
+  object-position: 62% 52% !important;
+  display: block !important;
+  /* 纯装饰层，绝不能吃掉点击（虽实测按钮在其之上，仍显式关掉更稳） */
+  pointer-events: none !important;
+  /* 白天树林本身很亮，压暗 + 降饱和，做出"战地纪实"的冷调 */
+  filter: saturate(0.86) contrast(1.05) brightness(0.84) !important;
+}
+
+/* 再补一层整体压暗 + 轻微冷色偏移。
+   —— 原 canvas 那套是像素画，本来就不亮；换成实拍后亮度高得多，
+      光靠 .hero-panel:after 那层不够，标题会糊。 */
+.intro-film-tint {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+  background:
+    radial-gradient(ellipse 94% 80% at 56% 48%, transparent 34%, rgba(3, 8, 8, 0.44) 100%),
+    linear-gradient(180deg, rgba(3, 8, 8, 0.34) 0%, transparent 18%, transparent 76%, rgba(3, 8, 8, 0.46) 100%);
+}
+
+/* ★ 像素战场的「硝烟 / 炮火闪光」在视频模式下必须关掉。
+   原因：#hero-smoke 原本是**循环无缝的技术保证**——它在末段涨满，
+   把"部队瞬移回起点"那一帧盖住。现在背景换成视频，这个使命不存在了，
+   留着只会在视频上糊出一团没有来源的白烟；闪光同理。 */
+.hero-panel .hero-cinematic #hero-flash,
+.hero-panel .hero-cinematic #hero-smoke {
+  display: none !important;
+}
+/* 扫描线保留，强度再压低一点——它在实拍画面上更像"监视器信号" */
+.hero-panel .hero-cinematic .hero-scan {
+  opacity: 0.22 !important;
+}
+
+/* 文案区补投影：视频比像素画亮得多，必须有投影才稳 */
+.screen.landing .landing-copy h1,
+.screen.landing .landing-copy .intro,
+.screen.landing .landing-copy .eyebrow {
+  text-shadow:
+    0 2px 26px rgba(0, 0, 0, 0.95),
+    0 1px 4px rgba(0, 0, 0, 0.8),
+    0 0 60px rgba(0, 0, 0, 0.6);
+}
+
+/* 尊重"减少动态效果"：不放视频，只留 poster 静帧 */
+@media (prefers-reduced-motion: reduce) {
+  .intro-video { display: none !important; }
+  .hero-canvas-wrap {
+    background: #06100e url("/media/intro-poster.jpg") center/cover no-repeat !important;
+  }
+}
+
+/* ---- F5-film 收尾调整：让像素时代的配色迁就到实拍画面 --------------- */
+
+/* 1. 画面别压太狠：0.62 偏暗，抬到 0.72，同时保持冷调 */
+.intro-video {
+  filter: saturate(0.86) contrast(1.05) brightness(0.84) !important;
+}
+
+/* 2. 底部信息栏原先是 rgb(107,121,148) 的灰蓝——它配像素画是"游戏 UI"，
+      但压在实拍画面上就是一条突兀的浅色带。改成半透明深色 + 青色描边，
+      和整体暗调融在一起。 */
+.hero-panel .hero-bottom {
+  background: rgba(5, 14, 13, 0.82) !important;
+  backdrop-filter: blur(3px) !important;
+  border-top: 1px solid rgba(0, 255, 197, 0.45) !important;
+  box-shadow: 0 -2px 14px rgba(0, 0, 0, 0.55) !important;
+}
+.hero-panel .hero-bottom strong {
+  color: #d8e4e2 !important;
+}
+.hero-panel .hero-bottom span {
+  color: #8fa5a2 !important;
+}
+/* 小坦克图标原本是深色（配浅底），现在底变深了要反过来 */
+.hero-panel .hero-bottom .mini-tank {
+  color: rgb(0, 255, 197) !important;
+}
+
+/* 3. 顶部标题带也做同样的半透明处理，避免两条"实色横条"打断画面 */
+.hero-panel .panel-heading {
+  background: linear-gradient(
+    to bottom,
+    rgba(5, 14, 13, 0.88),
+    rgba(5, 14, 13, 0.42)
+  ) !important;
+  backdrop-filter: blur(3px) !important;
+}
+
+/* 4. 左侧文案区再加一道极窄的纵向渐隐，把"文字区"和"画面区"分开，
+      这样标题不必靠加重投影硬扛（投影太重会显得脏）。 */
+.screen.landing .landing-copy::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -20px;
+  width: 620px;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    95deg,
+    rgba(3, 9, 9, 0.9) 0%,
+    rgba(3, 9, 9, 0.72) 42%,
+    rgba(3, 9, 9, 0.28) 72%,
+    transparent 100%
+  );
+}
+
+/* 文案区加渐隐层之后，投影可以收敛一点，字迹更干净 */
+.screen.landing .landing-copy h1,
+.screen.landing .landing-copy .intro,
+.screen.landing .landing-copy .eyebrow {
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.9), 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+
+/* 5. .hero-panel:after 那层暗角是给**像素画**设计的（像素画本身亮，
+      需要 0.9 的强压暗才能让文字浮出来）。换成实拍后它变成第三层压暗，
+      画面直接灰掉。这里按"实拍已自带明暗层次"重新配一遍：
+      左侧仍需较深（压住文字区），中间到右侧放开，让画面透出来。 */
+.hero-panel:after {
+  background:
+    linear-gradient(
+      100deg,
+      rgba(5, 13, 12, 0.86) 0%,
+      rgba(5, 13, 12, 0.58) 30%,
+      rgba(5, 13, 12, 0.05) 58%,
+      transparent 76%
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(5, 13, 12, 0.42) 0%,
+      transparent 20%,
+      transparent 76%,
+      rgba(5, 13, 12, 0.58) 100%
+    ) !important;
+}

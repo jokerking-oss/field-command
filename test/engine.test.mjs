@@ -71,8 +71,8 @@ function round(s) {
   return s;
 }
 
-test("all three maps start valid with 2–4 seats and teams", () => {
-  for (const map of MAPS)
+test("all three legacy maps start valid with 2–4 seats and teams", () => {
+  for (const map of MAPS.filter((map) => ["training", "river", "crossroads"].includes(map.id)))
     for (const count of [2, 3, 4]) {
       const s = createGame({ mapId: map.id, players: players(count) });
       assert.equal(validateState(s), true);

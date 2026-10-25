@@ -1,0 +1,726 @@
+/* ==========================================================================
+   F5 · 点阵字体 + 面板全部浮层化（2026-09-30）
+   --------------------------------------------------------------------------
+   用户指令：「都改掉，都改掉。」——指上一条回复里悬着的两件事：
+     ① 引入点阵字体（最大的"像游戏"杠杆）
+     ② 右侧 268px 面板列 + 卡片式单位面板 → 高级战争的浮层体系
+
+   ★ 字体选型（含一次止损，值得记）：
+     第一版选了 Zpix「最像素」。下载后查 README 才发现它是**商业付费字体**
+     （原文：「字体付费后即默认取得相应授权」），且明确禁止
+     「修改、反编译、转换、拆分等反向操作」——连子集化都不被允许。已弃用。
+     改用 Ark Pixel Font（方舟像素字体，TakWolf），SIL OFL-1.1，
+     许可全文已随字体放进 public/fonts/OFL-ark-pixel-font.txt。
+     ⚠️ 10px 版字集不足（实测缺 579 字，连「两」「仅」「代」都没有），
+        必须用 12px 版。
+
+   ★ 点阵字体的硬约束：**字号必须是设计尺寸的整数倍**（12 / 24 / 48），
+     否则浏览器抗锯齿会把点阵糊掉，比系统字更丑。
+     所以下面是「先全站压到 12px，再把需要放大的抬回去」。
+
+   ★ 布局依据（实测 docs/DoR-FieldMenu.png）：
+     菜单**盖在地图正中**、每项是独立深色横条、选中项青绿高亮、
+     底部一条说明栏跟着选项变、右下角一个圆形确认键。
+     所以：命令菜单贴单位弹出；底部新增常驻说明栏；CO/电台收进抽屉。
+   ========================================================================== */
+
+/* ---- 1. 字体加载 ------------------------------------------------------ */
+
+/* 方舟像素字体 12px 比例版（简体中文子集）
+   来源：https://github.com/TakWolf/ark-pixel-font
+   版本：release 2026.09.25 · ark-pixel-font-12px-proportional-ttf.woff2
+   许可：SIL Open Font License 1.1（可自由使用 / 修改 / 子集化 / 再分发）
+        全文见同目录 OFL-ark-pixel-font.txt —— OFL 要求随附，勿删。
+   ⚠️ 未做子集化：字体覆盖 24869 个字符。裁小了会在玩家自定义名字上缺字，
+      756KB 对本地/LAN 游戏可以接受。 */
+@font-face {
+  font-family: "ArkPixel";
+  src: url("/fonts/ark-pixel-12px-zh_hans.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --aw-font: "ArkPixel", "PingFang SC", "Microsoft YaHei", ui-sans-serif, sans-serif;
+  /* 点阵阶梯：12 / 24 / 48 */
+  --aw-fs: 12px;
+  --aw-fs-big: 24px;
+  --aw-fs-hero: 48px;
+}
+
+/* ★ 全站换字体 + 压字号。
+   `:not(.__aw-exempt)` 里挂一个不存在的类，是为了把优先级抬到 (0,0,1,2)
+   ——刚好压过 base 里 `.panel h2` 这类 (0,0,1,1) 的规则。
+   不这么做的话，base 会按着字号不让动，就会出现"字体换了、大小没换"
+   的割裂感（点阵字在非整数倍尺寸下会发糊）。 */
+html body,
+html body *:not(.__aw-exempt) {
+  font-family: var(--aw-font) !important;
+  font-size: var(--aw-fs) !important;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+}
+
+/* 需要放大的：用 `html body` 前缀再抬一级优先级 */
+html body .battle-turn strong,
+html body .funds strong,
+html body .feature-stats strong,
+html body .hero-badge,
+html body .landing h1 {
+  font-size: var(--aw-fs-big) !important;
+}
+html body .landing h1 {
+  font-size: var(--aw-fs-hero) !important;
+  line-height: 1 !important;
+}
+
+/* 数字一律等宽 + 描边，HUD 读数才不会跳动 */
+html body .funds strong,
+html body .hp-badge,
+html body .unit-stats strong,
+html body #energy-value,
+html body #funds,
+html body .battle-turn strong {
+  font-variant-numeric: tabular-nums !important;
+  line-height: 1 !important;
+  color: #fff !important;
+}
+
+/* ---- 2. 侧栏解构：从「268px 文档流列」变成「零尺寸浮层锚点」 --------- */
+
+.command-sidebar {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  display: block !important;
+  gap: 0 !important;
+  overflow: visible !important;
+  z-index: 28 !important;
+  pointer-events: none !important; /* 地图要能点；只给子元素开 */
+}
+.command-sidebar > * {
+  pointer-events: auto;
+}
+
+/* ---- 3. 指挥室抽屉（CO / 能量 / 电台）：默认全隐藏，按需打开 --------- */
+
+.commander-panel,
+.log-panel {
+  display: none !important;
+}
+
+.command-sidebar.room-open .commander-panel {
+  display: block !important;
+  position: fixed !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) translateY(-130px) !important;
+  width: min(440px, calc(100vw - 32px)) !important;
+  margin: 0 !important;
+}
+
+.command-sidebar.room-open .log-panel {
+  display: block !important;
+  position: fixed !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) translateY(40px) !important;
+  width: min(440px, calc(100vw - 32px)) !important;
+  max-height: 140px !important;
+  overflow-y: auto !important;
+  margin: 0 !important;
+}
+
+/* 抽屉打开时给地图压一层暗幕，视线收拢 */
+.command-sidebar.room-open:before {
+  content: "" !important;
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(5, 13, 12, 0.55) !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+}
+
+/* 抽屉开关：贴右边缘的竖排小按钮。
+   ⚠️ writing-mode 只能挂在文字 `em` 上，**不能**挂在 flex 容器上——
+   竖排模式下 flex-direction:column 会变成横向主轴，按钮被撑到 56px 宽
+   （实测），看起来像一块砖。 */
+.drawer-toggle {
+  position: fixed !important;
+  right: 0 !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  z-index: 32 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  width: 26px !important;
+  padding: 10px 0 !important;
+  background: rgba(41, 65, 74, 0.94) !important;
+  border: 1px solid var(--aw-cyan) !important;
+  border-right: 0 !important;
+  border-radius: 3px 0 0 3px !important;
+  box-shadow: 0 0 0 2px #000 !important;
+  color: var(--aw-cyan) !important;
+  cursor: pointer !important;
+}
+.drawer-toggle span {
+  line-height: 1 !important;
+}
+.drawer-toggle em {
+  font-style: normal !important;
+  writing-mode: vertical-rl !important;
+  letter-spacing: 0.22em !important;
+}
+.drawer-toggle:hover,
+.drawer-toggle[aria-pressed="true"] {
+  background: var(--aw-cyan) !important;
+  color: #032b23 !important;
+}
+
+/* ---- 4. 单位/地形面板 → 左下贴边横条（AW 的单位栏就在这个位置） ------ */
+
+#selection-panel {
+  position: fixed !important;
+  left: 12px !important;
+  bottom: 34px !important;
+  right: auto !important;
+  top: auto !important;
+  width: auto !important;
+  max-width: min(600px, calc(100vw - 340px)) !important;
+  padding: 8px 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 14px !important;
+  border-left: 3px solid var(--aw-cyan) !important;
+  /* 关掉毛玻璃：① backdrop-filter 会给 fixed 后代建立包含块（见 app.mjs 注释）；
+     ② 高级战争的面板是不透明的纯色块，玻璃效果本来就是"网页语言"。 */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: rgba(19, 32, 37, 0.96) !important;
+}
+
+/* ★ 行高锁到 1 —— 这不是"压高度"的权宜之计，是照抄参考规格。
+   实测高级战争那六个位图字体（TecTacRegular / font-menu / font-day-ui /
+   font-map-ui / font-small-ui / font-label）全是 **lineHeight === size**，
+   一点行距都没有，字是挤在一起的。我们的 base 是网页行高（约 1.6），
+   同一个 12px 字撑出 19px 的行盒，HUD 自然被顶高。
+   点阵中文的字面正好落在 em 框内，行高 1 不会切字。 */
+.topbar,
+.battle-header,
+.battlefield-toolbar,
+#selection-panel,
+#selection-panel *,
+.command-bar,
+.command-list,
+.command-list *,
+.player-strip,
+.map-legend,
+.end-turn-area,
+.drawer-toggle {
+  line-height: 1 !important;
+}
+
+/* 单位栏里的文字一律不换行——12px 点阵比原来的 9px 大，
+   不锁死就会把「移动 / 射程」折成两行，把横条撑高。 */
+#selection-panel,
+#selection-panel * {
+  white-space: nowrap !important;
+}
+
+#selection-panel .selection-top {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex: 0 0 auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+#selection-panel .selection-top h2 {
+  margin: 0 !important;
+}
+/* 单位栏里不显示 eyebrow。
+   「红方 / UNIT u14」这种「小号大写标签 + 大标题」是典型的**网页排版**
+   （hero-eyebrow 那一套），游戏 HUD 是直接给结论。
+   去掉它顺便把横条压矮 14px。 */
+#selection-panel .selection-top .eyebrow {
+  display: none !important;
+}
+#selection-panel .hp-badge {
+  background: rgba(0, 0, 0, 0.45) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  padding: 2px 6px !important;
+  line-height: 1 !important;
+}
+#selection-panel .hp-badge small {
+  display: none !important;
+}
+
+#selection-panel .selection-content {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 0 !important;
+  min-width: 0 !important;
+}
+
+/* 基类给这些子元素留了 margin/padding，会把横条顶高。
+   实测：.combat-preview 因此从 22px 变成 34px，整条从 50px 顶到 62px。
+   这里统一清零，需要留白的地方由下面的具体规则加回来。
+   ⚠️ 顺序有讲究：本规则必须排在 .combat-preview 的 padding 规则**之前**，
+      否则 `!important` 同优先级下会由源码顺序决定胜负，把 padding 也清掉。 */
+#selection-panel .selection-content > *,
+#selection-panel .unit-stats > *,
+#selection-panel .combat-preview > * {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* ★ 关键一刀：把冗长的散文段落从面板里拿掉。
+   「按住部队拖出红色箭头选路线，或点击青色格预选移动。」这种句子
+   是「网页正文」，不是游戏 UI。信息移到底部说明栏，一行一条。 */
+#selection-panel .selection-content > p {
+  display: none !important;
+}
+
+#selection-panel .unit-stats {
+  display: flex !important;
+  gap: 14px !important;
+  margin: 0 !important;
+}
+#selection-panel .unit-stats > div {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  border: 0 !important;
+  padding: 0 !important;
+  background: none !important;
+}
+#selection-panel .unit-stats span {
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+#selection-panel .unit-stats strong {
+  color: #fff !important;
+}
+
+#selection-panel .combat-preview {
+  display: flex !important;
+  gap: 12px !important;
+  padding: 4px 8px !important;
+  background: rgba(0, 0, 0, 0.4) !important;
+  border: 1px solid rgba(255, 138, 106, 0.6) !important;
+  color: #ffd0bd !important;
+  white-space: nowrap !important;
+}
+#selection-panel .combat-preview strong {
+  color: #fff !important;
+}
+
+/* 空选中态：压成一行提示 */
+#selection-panel .selection-hint {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 0 !important;
+}
+#selection-panel .selection-hint .crosshair {
+  font-size: var(--aw-fs) !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  color: var(--aw-cyan) !important;
+  border: 0 !important;
+}
+#selection-panel .selection-hint h3 {
+  margin: 0 !important;
+}
+#selection-panel .selection-hint p {
+  display: none !important;
+}
+
+/* ---- 5. 命令菜单：贴单位弹出（AW 的做法）+ AW 横条造型 --------------- */
+
+/* 菜单的挂载点。它是 #selection-panel 之外的独立容器——原因见 app.mjs
+   里 renderSelection() 末尾那段注释（backdrop-filter 建包含块）。
+   自身不参与布局，菜单在里面是 fixed，所以这里只需要清掉默认边距。 */
+.command-menu-host {
+  position: static;
+  margin: 0;
+  padding: 0;
+}
+
+.command-list {
+  position: fixed !important;
+  /* ★ 定位语义：left/top 是**中心点**，配下面的 translate(-50%,-50%)。
+     CSS 只负责画盒子，摆位全部交给 shared/hud-layout.mjs 的
+     commandMenuPosition()。演进过三版：① 单位正下方居中（压住移动范围格）
+     → ② 贴屏幕边缘 + 垂直错开（不挡了，但离终点大半屏，视线要来回跳）
+     → ③ **跟随选定的终点格、贴在它右上角**（现版）。理由见那个函数。 */
+  left: var(--menu-left, 50%) !important;
+  top: var(--menu-top, 50%) !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 29 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  padding: 5px !important;
+  margin: 0 !important;
+  min-width: 176px !important;
+  background: rgba(41, 65, 74, 0.95) !important;
+  border: 1px solid var(--aw-cyan) !important;
+  border-radius: 2px !important;
+  box-shadow: 0 0 0 2px #000, 0 8px 0 rgba(0, 0, 0, 0.4) !important;
+}
+
+.command-list button {
+  display: block !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  text-align: left !important;
+  padding: 7px 10px 7px 22px !important;
+  position: relative !important;
+  background: rgb(74, 89, 107) !important;
+  border: 1px solid rgba(255, 255, 255, 0.24) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  color: #fff !important;
+  cursor: pointer !important;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease !important;
+  white-space: nowrap !important;
+}
+
+/* 选中指示：AW 是「箭头指针 + 变色」，不是单纯把底色压深 */
+.command-list button:before {
+  content: "▶";
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 8px;
+  opacity: 0;
+  color: inherit;
+}
+.command-list button:hover,
+.command-list button:focus-visible {
+  background: rgb(25, 113, 99) !important;
+  border-color: var(--aw-cyan) !important;
+  color: var(--aw-cyan) !important;
+  outline: none !important;
+}
+.command-list button:hover:before,
+.command-list button:focus-visible:before {
+  opacity: 1;
+}
+
+/* 攻击指令：红色警示。AW 里攻击是唯一会变色的菜单项 */
+.command-list button[data-command="attack"] {
+  background: rgb(122, 47, 42) !important;
+  border-color: #ff8a6a !important;
+}
+.command-list button[data-command="attack"]:hover {
+  background: rgb(163, 54, 44) !important;
+  border-color: #ffd0bd !important;
+  color: #ffe6da !important;
+}
+.command-list button[disabled] {
+  opacity: 0.42 !important;
+  cursor: not-allowed !important;
+}
+
+/* 没有指令时不画空盒子 */
+.command-list:empty {
+  display: none !important;
+}
+
+/* ---- 6. 底部说明栏：AW 界面里常驻的那一条 ---------------------------- */
+
+.command-bar {
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  height: 30px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  /* 右侧 232px 是给图例留的位置——图例是 .battlefield-panel 的子元素，
+     只能 fixed 定位，不占本栏的流。不预留就会和图例叠在一起（实测重叠）。 */
+  padding: 0 232px 0 14px !important;
+  margin: 0 !important;
+  background: rgb(107, 121, 148) !important;
+  border-top: 1px solid rgba(0, 255, 197, 0.55) !important;
+  box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.55) !important;
+  color: #071216 !important;
+  z-index: 30 !important;
+  pointer-events: none !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+}
+.command-bar-key {
+  color: rgba(7, 18, 22, 0.55) !important;
+}
+#command-bar-text {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  color: #071216 !important;
+}
+.command-bar-hint {
+  flex: 0 0 auto !important;
+  color: rgba(7, 18, 22, 0.62) !important;
+}
+
+/* ---- 7. 结束回合：右上角一枚 AW 风按钮（原先是侧栏里的一大块） ------- */
+
+.end-turn-area {
+  position: fixed !important;
+  right: 14px !important;
+  top: 92px !important;
+  left: auto !important;
+  bottom: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-end !important;
+  gap: 4px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: none !important;
+  border: 0 !important;
+}
+.end-turn-area #save-status {
+  color: rgba(255, 255, 255, 0.5) !important;
+  text-shadow: 0 1px 0 #000 !important;
+}
+.end-turn-area .button.large {
+  padding: 9px 16px !important;
+  background: var(--aw-cyan-dim) !important;
+  border: 1px solid var(--aw-cyan) !important;
+  color: var(--aw-cyan) !important;
+  box-shadow: 0 0 0 2px #000, 0 3px 0 rgba(0, 0, 0, 0.5) !important;
+}
+.end-turn-area .button.large:hover:not([disabled]) {
+  background: var(--aw-cyan) !important;
+  color: #032b23 !important;
+}
+.end-turn-area .button.large[disabled] {
+  background: rgb(74, 89, 107) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+/* ---- 8. 玩家条 / 图例：压成角落小条，不占版面 ------------------------ */
+
+.player-strip {
+  position: fixed !important;
+  right: 12px !important;
+  bottom: 34px !important;
+  left: auto !important;
+  top: auto !important;
+  width: auto !important;
+  max-width: 300px !important;
+  display: flex !important;
+  gap: 6px !important;
+  padding: 5px 8px !important;
+  background: rgba(5, 16, 14, 0.78) !important;
+  border: 1px solid rgba(0, 255, 197, 0.3) !important;
+  border-radius: 2px !important;
+  backdrop-filter: blur(8px) !important;
+  overflow-x: auto !important;
+}
+
+.map-legend {
+  position: fixed !important;
+  right: 14px !important;
+  bottom: 4px !important;
+  left: auto !important;
+  top: auto !important;
+  height: 22px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 0 !important;
+  background: none !important;
+  border: 0 !important;
+  opacity: 0.94 !important;
+  z-index: 31 !important;
+  pointer-events: none !important;
+  color: #071216 !important;
+}
+.map-legend span {
+  color: #071216 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
+.map-legend .legend-tip {
+  display: none !important;
+}
+/* ★ 图例色块必须跟地图上的**实际颜色**一致，否则是误导。
+   基类里还是 F1 的旧配色（move #72d3bc / attack #ff8061），
+   而 F2 已经把范围洗成 rgba(122,224,168,.42)、目标洗成 rgba(240,104,78,.34)、
+   已行动光标改成冷灰 #899492。这里同步过来。
+   说明栏底是浅蓝灰，所以用实色块比半透明更清楚。 */
+.legend-square.move {
+  background: #7ae0a8 !important;
+  border-color: rgba(0, 0, 0, 0.45) !important;
+}
+.legend-square.attack {
+  background: #f0684e !important;
+  border-color: rgba(0, 0, 0, 0.45) !important;
+}
+.legend-square.spent {
+  background: #899492 !important;
+  border-color: rgba(0, 0, 0, 0.45) !important;
+}
+.legend-square {
+  width: 10px !important;
+  height: 10px !important;
+  border: 1px solid rgba(0, 0, 0, 0.45) !important;
+}
+
+/* ---- 8b. 顶栏并成一条 34px 的带 -------------------------------------- */
+
+/* ★ 顶栏必须浮在地图之上。
+   F3 把 .battle-layout 设成 position:fixed; inset:0 —— 地图因此铺满整个视口，
+   连带把顶栏（品牌 / 作战大厅 / 音效 / 帮助）**整条盖住**：
+   实测截图里 0~48px 全是地图，app 级导航全不可见。
+   这里把顶栏也钉到视口上并抬 z-index，用渐变底让它和下面的战况带连成
+   一条整体的"机顶带"，而不是两块分离的横条。 */
+.topbar {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  z-index: 40 !important;
+  background: linear-gradient(
+    to bottom,
+    rgba(6, 16, 15, 0.95),
+    rgba(6, 16, 15, 0.72)
+  ) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.battle-header {
+  top: 48px !important;
+  height: 34px !important;
+  margin: 0 !important;
+  padding: 0 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  background: rgba(12, 22, 26, 0.92) !important;
+  border-bottom: 1px solid rgba(0, 255, 197, 0.45) !important;
+  box-shadow: none !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  z-index: 26 !important;
+}
+/* 关卡名与回合信息并排成一行——原来是上下两行，
+   在 34px 的带里会溢出。 */
+.battle-header .mission-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 0 !important;
+}
+.battle-header .mission-title .eyebrow { display: none !important; }
+.battle-header .mission-title h1 {
+  font-size: var(--aw-fs) !important;
+  margin: 0 !important;
+  letter-spacing: 0.02em !important;
+}
+.battle-header .battle-turn {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 8px !important;
+  padding: 0 !important;
+  background: none !important;
+  border: 0 !important;
+}
+/* 基类把「红方回合 / 等待指令」塞在一个 div 里默认块级排列 = 上下两行，
+   在 34px 的带里会顶到边。这里让它们并成一行。 */
+.battle-header .battle-turn > div {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 8px !important;
+}
+.battle-header .battle-turn small { display: inline !important; color: rgba(255,255,255,.62) !important; }
+.battle-header .battle-tools { display: flex !important; gap: 6px !important; }
+.battle-header .battle-tools .button {
+  padding: 4px 8px !important;
+  background: rgb(74, 89, 107) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  border-radius: 2px !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+.battle-header .battle-tools .button:hover {
+  background: var(--aw-cyan-dim) !important;
+  border-color: var(--aw-cyan) !important;
+  color: var(--aw-cyan) !important;
+}
+
+/* 结束回合按钮落到这条带的正下方 */
+.end-turn-area { top: 90px !important; }
+.end-turn-area #save-status {
+  /* 叠在地图上，必须自带底衬，否则浅底浅字看不清（实测几乎不可见） */
+  padding: 3px 7px !important;
+  background: rgba(6, 16, 15, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 2px !important;
+  color: rgba(255, 255, 255, 0.82) !important;
+  text-shadow: 0 1px 2px #000 !important;
+}
+
+/* ---- 8c. 说明栏内部：状态 / 说明 / 悬停信息 / 快捷键 / 图例 ---------- */
+
+.command-bar-status {
+  flex: 0 0 auto !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding-right: 10px !important;
+  border-right: 1px solid rgba(7, 18, 22, 0.28) !important;
+  color: #071216 !important;
+}
+.command-bar-hover {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  padding-left: 10px !important;
+  border-left: 1px solid rgba(7, 18, 22, 0.28) !important;
+  color: rgba(7, 18, 22, 0.72) !important;
+}
+/* 窄屏时逐级丢掉次要信息，先丢悬停提示，再丢快捷键 */
+@media (max-width: 1180px) {
+  .command-bar-hover { display: none !important; }
+}
+@media (max-width: 940px) {
+  .command-bar-hint { display: none !important; }
+  .map-legend { display: none !important; }
+}
+
+/* ---- 9. 关于底部遮挡：不修，这是刻意的 --------------------------------
+   说明栏(30px) / 单位条 / 玩家条 会压住地图最下面一条边。
+   高级战争也是这么干的——底部说明栏本来就盖在战场上。
+
+   ⚠️ 试过用 `object-position: 50% 42%` 把地图上移让开，**已放弃**：
+   延伸层（#map-fill，renderer.mjs:865）用的是硬编码居中
+   `dx = (boxW - dw) / 2`，不读 object-position。一旦位移，
+   模糊底和地图就会错位。要改就得同时改渲染器，收益不值这个风险。
+
+   另外说明栏设了 `pointer-events: none`，所以盖住的那条边**依然可点**，
+   只是视觉上被压住——不会出现"点不到最后一排"的问题。 */

@@ -46,6 +46,8 @@ const isObject = (value) =>
 const newToken = () => randomBytes(32).toString("hex");
 const knownCommander = (value) => Object.hasOwn(COMMANDERS, value);
 const knownMap = (value) => MAPS.some((map) => map.id === value);
+const mapSupportsPlayers = (mapId, playerCount) =>
+  MAPS.some((map) => map.id === mapId && map.players.includes(playerCount));
 
 function nameOf(value, fallback = "指挥官") {
   if (value !== undefined && typeof value !== "string")
@@ -61,8 +63,10 @@ function commanderOf(value = "vanguard") {
     fail(400, "未知的指挥官");
   return value;
 }
-function mapOf(value = "river") {
+function mapOf(value = "river", playerCount) {
   if (typeof value !== "string" || !knownMap(value)) fail(400, "未知的战场");
+  if (playerCount !== undefined && !mapSupportsPlayers(value, playerCount))
+    fail(400, "该地图不支持此玩家人数");
   return value;
 }
 function modeOf(value = "ffa") {
@@ -86,6 +90,8 @@ function validateRooms(rooms) {
       throw new Error("房间配置无效");
     if (!knownMap(room.mapId) || !["ffa", "teams"].includes(room.mode))
       throw new Error("房间战场配置无效");
+    if (!mapSupportsPlayers(room.mapId, room.playerCount))
+      throw new Error("房间战场不支持当前玩家人数");
     if (
       !Number.isSafeInteger(room.revision) ||
       room.revision < 1 ||
@@ -142,6 +148,61 @@ function validateRooms(rooms) {
   return true;
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+/** 去掉 IPv6 字面量的方括号并统一小写。 */
+function bareHost(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+}
+/** 从 Host / X-Forwarded-Host 取出不带端口的主机名；兼容逗号分隔的代理链。 */
+function hostnameOf(value) {
+  const first = String(value ?? "").split(",")[0].trim();
+  if (!first) return "";
+  try {
+    return bareHost(new URL(`http://${first}`).hostname);
+  } catch {
+    return "";
+  }
+}
+/**
+ * 主机名是否属于「本机 / 内网」。
+ * 2026-10-02：公网部署后 Host 是公网域名，此时不能再把房间列表和内网地址发出去。
+ */
+/** 接受 https://host 或裸 host 两种写法。 */
+function originHostOf(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  try {
+    return bareHost(new URL(raw).hostname);
+  } catch {
+    return hostnameOf(raw);
+  }
+}
+/**
+ * 反向代理部署时可用 ALLOWED_ORIGINS=host1,host2 显式声明本服务的公网主机名。
+ * 不设置时依赖浏览器自带的 Sec-Fetch-Site（见请求处理里的来源校验）。
+ */
+const EXTRA_ORIGIN_HOSTS = new Set(
+  String(process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((item) => originHostOf(item))
+    .filter(Boolean),
+);
+
+function isLocalHostname(hostname) {
+  const host = bareHost(hostname);
+  if (!host) return true;
+  if (LOOPBACK_HOSTS.has(host)) return true;
+  if (/^127\./.test(host)) return true;
+  if (/^10\./.test(host)) return true;
+  if (/^192\.168\./.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
+  if (host.endsWith(".local") || host.endsWith(".localhost")) return true;
+  return false;
+}
+
 async function readBody(req) {
   if (
     !(req.headers["content-type"] ?? "")
@@ -182,6 +243,34 @@ export async function createServer({
   const aiSteps = new Map();
   let closing = false;
   let mutationQueue = Promise.resolve();
+  /* 公网限流：只在内网以外的部署上生效，不影响本地/局域网对局与测试。 */
+  const rateHits = new Map();
+  const RATE_RULES = {
+    create: { limit: 12, windowMs: 60 * 60 * 1000 },
+    join: { limit: 30, windowMs: 60 * 1000 },
+  };
+  function clientAddress(req) {
+    const forwarded = String(req.headers["x-forwarded-for"] ?? "")
+      .split(",")[0]
+      .trim();
+    return forwarded || req.socket.remoteAddress || "unknown";
+  }
+  function rateLimit(req, kind, publicMode) {
+    if (!publicMode) return;
+    const rule = RATE_RULES[kind];
+    if (!rule) return;
+    const now = Date.now();
+    const key = `${kind}:${clientAddress(req)}`;
+    const hits = (rateHits.get(key) ?? []).filter(
+      (at) => now - at < rule.windowMs,
+    );
+    if (hits.length >= rule.limit) fail(429, "操作过于频繁，请稍后再试");
+    hits.push(now);
+    rateHits.set(key, hits);
+    if (rateHits.size > 4000)
+      for (const [existing, times] of rateHits)
+        if (!times.some((at) => now - at < 60_000)) rateHits.delete(existing);
+  }
   const store = await createSaveStore({
     dataDir,
     validate: validateRooms,
@@ -333,7 +422,28 @@ export async function createServer({
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
+      /* 2026-10-02 公网部署：Host 决定「内网 / 公网」两种模式。
+         反向代理常会改写 Host（端口甚至域名），所以：
+         ① 额外接受 X-Forwarded-Host；
+         ② Origin 只比主机名、不比端口 —— 否则隧道后面会整片 403。 */
+      const requestHost = hostnameOf(req.headers.host);
+      const forwardedHost = hostnameOf(req.headers["x-forwarded-host"]);
+      const publicMode =
+        process.env.PUBLIC_MODE === "1" ||
+        (process.env.PUBLIC_MODE !== "0" &&
+          !isLocalHostname(forwardedHost || requestHost));
       if (url.pathname.startsWith("/api/")) {
+        /**
+         * 来源校验（2026-10-02 改为代理兼容版）。
+         * 反向代理会在终止 TLS 之后改写 Host，服务看不到自己的公网域名，
+         * 所以「Origin 必须等于 Host」这种写法会让整站接口在代理后面全部 403。
+         * 现在的顺序：
+         *   ① Origin 能对上 Host / X-Forwarded-Host / ALLOWED_ORIGINS —— 放行；
+         *   ② 对不上时，只有浏览器自带的同源戳（Sec-Fetch-Site: same-origin）才放行。
+         * Sec-Fetch-* 由浏览器生成、脚本无法改写，跨站页面发来的请求是 cross-site，
+         * 因此这层防护依然拦得住 CSRF；而本服务的写操作要么是建房、要么必须带上
+         * 只有房内浏览器才知道的 64 位重连凭证，本身没有 Cookie 会话可被盗用。
+         */
         if (req.headers.origin) {
           let origin;
           try {
@@ -341,30 +451,41 @@ export async function createServer({
           } catch {
             fail(403, "请求来源无效");
           }
+          if (!["http:", "https:"].includes(origin.protocol))
+            fail(403, "请从本游戏页面发起请求");
+          const originHost = bareHost(origin.hostname);
+          const allowed = new Set(
+            [requestHost, forwardedHost, ...EXTRA_ORIGIN_HOSTS].filter(Boolean),
+          );
           if (
-            origin.host !== req.headers.host ||
-            !["http:", "https:"].includes(origin.protocol)
+            !allowed.has(originHost) &&
+            req.headers["sec-fetch-site"] !== "same-origin"
           )
             fail(403, "请从本游戏页面发起请求");
         }
         if (url.pathname === "/api/rooms") {
           if (req.method === "GET") {
+            /* 公网模式下不公开房间列表与内网地址：知道房间码才能加入。 */
             json(res, 200, {
-              rooms: [...rooms.values()].map((room) => ({
-                id: room.id,
-                mapId: room.mapId,
-                phase: room.phase,
-                playerCount: room.playerCount,
-                humanCount: room.seats.filter(
-                  (seat) => seat.controller === "human",
-                ).length,
-                hostName: room.seats[0].name,
-              })),
-              urls: lanUrls(server.address().port),
+              publicMode,
+              rooms: publicMode
+                ? []
+                : [...rooms.values()].map((room) => ({
+                    id: room.id,
+                    mapId: room.mapId,
+                    phase: room.phase,
+                    playerCount: room.playerCount,
+                    humanCount: room.seats.filter(
+                      (seat) => seat.controller === "human",
+                    ).length,
+                    hostName: room.seats[0].name,
+                  })),
+              urls: publicMode ? [] : lanUrls(server.address().port),
             });
             return;
           }
           if (req.method === "POST") {
+            rateLimit(req, "create", publicMode);
             const body = await readBody(req);
             const result = await mutate(async () => {
               if (rooms.size >= ROOM_LIMIT)
@@ -381,7 +502,7 @@ export async function createServer({
                 id,
                 hostSeat: 0,
                 phase: "lobby",
-                mapId: mapOf(body.mapId),
+                mapId: mapOf(body.mapId, playerCount),
                 mode: modeOf(body.mode),
                 playerCount,
                 state: null,
@@ -466,6 +587,7 @@ export async function createServer({
           room = findRoom(id);
           const next = structuredClone(room);
           if (operation === "join") {
+            rateLimit(req, "join", publicMode);
             lobbyOnly(room);
             const openSeat =
               next.seats.find((seat) => seat.controller === "open") ??
@@ -484,7 +606,8 @@ export async function createServer({
           if (operation === "configure") {
             hostOnly(room, seat);
             lobbyOnly(room);
-            if (body.mapId !== undefined) next.mapId = mapOf(body.mapId);
+            if (body.mapId !== undefined)
+              next.mapId = mapOf(body.mapId, next.playerCount);
             if (body.mode !== undefined) next.mode = modeOf(body.mode);
             if (body.slots !== undefined) {
               if (

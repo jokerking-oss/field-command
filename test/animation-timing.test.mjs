@@ -21,7 +21,7 @@ function state() {
 }
 
 function unit(game, type, owner, x, y) {
-  const stats = { infantry: [null, 99], tank: [9, 70] }[type];
+  const stats = { infantry: [null, 99], tank: [9, 70], drone: [1, 50] }[type];
   const current = { id: `u${game.nextUnitId++}`, type, owner, x, y, hp: 10,
     ammo: stats[0], fuel: stats[1], acted: false, cargo: null };
   game.units.push(current);
@@ -54,4 +54,16 @@ test("AI wait covers movement followed by a full combat exchange", () => {
   const counter = attacker.hp - (after.units.find((item) => item.id === attacker.id)?.hp ?? 0);
   assert.equal(actionAnimationDuration(before, after, action),
     movementDuration([{ x: 2, y: 3 }, { x: 3, y: 3 }]) + combatDuration(counter));
+});
+
+test("drone self-destruction does not extend the AI wait as a counterattack", () => {
+  const before = state();
+  const attacker = unit(before, "drone", 0, 2, 3);
+  const defender = unit(before, "tank", 1, 4, 3);
+  const action = { type: "move", unitId: attacker.id, x: 3, y: 3,
+    command: "attack", targetId: defender.id };
+  const after = applyAction(before, 0, action);
+  assert.equal(after.units.some((item) => item.id === attacker.id), false);
+  assert.equal(actionAnimationDuration(before, after, action),
+    movementDuration([{ x: 2, y: 3 }, { x: 3, y: 3 }]) + combatDuration(0));
 });
